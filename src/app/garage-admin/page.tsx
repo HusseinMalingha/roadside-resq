@@ -9,7 +9,7 @@ import StaffManagement from '@/components/garage/StaffManagement';
 import GarageManagement from '@/components/garage/GarageManagement'; // Import GarageManagement
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Filter, RefreshCw, Loader2, ShieldAlert, Home, Bell, Users, WrenchIcon, Briefcase, Building } from 'lucide-react';
+import { Filter, RefreshCw, Loader2, ShieldAlert, Home, Bell, Users, WrenchIcon, Briefcase, Building, ClipboardList } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -27,8 +27,8 @@ import {
   saveRequestsToStorage, 
   LOCAL_STORAGE_REQUESTS_KEY, 
   getStaffMembersFromStorage,
-  getGaragesFromStorage, // Import garage storage functions
-  saveGaragesToStorage // To initialize if not present
+  getGaragesFromStorage, 
+  saveGaragesToStorage 
 } from '@/lib/localStorageUtils';
 import AssignStaffDialog from '@/components/garage/AssignStaffDialog';
 
@@ -42,7 +42,7 @@ export default function GarageAdminPage() {
 
   const [requests, setRequests] = useState<ServiceRequest[]>([]);
   const [staffMembers, setStaffMembers] = useState<StaffMember[]>([]);
-  const [garageProviders, setGarageProviders] = useState<ServiceProvider[]>([]); // State for garages
+  const [garageProviders, setGarageProviders] = useState<ServiceProvider[]>([]); 
   const [isLoadingData, setIsLoadingData] = useState(true); 
   const [selectedGarage, setSelectedGarage] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
@@ -62,9 +62,9 @@ export default function GarageAdminPage() {
     })).sort((a, b) => b.requestTime.getTime() - a.requestTime.getTime());
     setRequests(processedRequests);
 
-    let storedGarages = getGaragesFromStorage(); // Load garages
-    if (storedGarages.length === 0) { // Initialize if empty (first run scenario)
-        const initialGarages = [ // This could be moved to a constant in localStorageUtils or types
+    let storedGarages = getGaragesFromStorage(); 
+    if (storedGarages.length === 0) { 
+        const initialGarages = [ 
             { 
                 id: 'ax-kampala-central', 
                 name: 'Auto Xpress - Kampala Central', 
@@ -213,7 +213,7 @@ export default function GarageAdminPage() {
   const assignableMechanics = allMechanics.filter(mech => !occupiedMechanicIds.has(mech.id));
 
   const refreshData = () => {
-    loadData(); // This will now also reload garages
+    loadData(); 
     setSelectedGarage('all');
     setSelectedStatus('all');
     toast({
@@ -300,10 +300,23 @@ export default function GarageAdminPage() {
       </Card>
 
       <Tabs defaultValue="requests" className="w-full">
-        <TabsList className="max-w-lg mx-auto w-full flex flex-col space-y-1 sm:space-y-0 sm:flex-row sm:space-x-1 sm:h-10">
-          <TabsTrigger value="requests" className="flex-1 w-full sm:w-auto">Service Requests</TabsTrigger>
-          {role === 'admin' && <TabsTrigger value="staff" className="flex-1 w-full sm:w-auto">Staff Management</TabsTrigger>}
-          {role === 'admin' && <TabsTrigger value="garages" className="flex-1 w-full sm:w-auto">Garage Management</TabsTrigger>}
+        <TabsList className="flex items-stretch justify-center sm:justify-start max-w-md mx-auto w-full sm:space-x-1 sm:h-10">
+          <TabsTrigger value="requests" className="flex flex-1 items-center justify-center p-2 sm:flex-none sm:w-auto sm:px-3 sm:py-1.5">
+            <ClipboardList className="h-5 w-5 sm:mr-2" />
+            <span className="hidden sm:inline">Service Requests</span>
+          </TabsTrigger>
+          {role === 'admin' && (
+            <TabsTrigger value="staff" className="flex flex-1 items-center justify-center p-2 sm:flex-none sm:w-auto sm:px-3 sm:py-1.5">
+              <Users className="h-5 w-5 sm:mr-2" />
+              <span className="hidden sm:inline">Staff</span>
+            </TabsTrigger>
+          )}
+          {role === 'admin' && (
+            <TabsTrigger value="garages" className="flex flex-1 items-center justify-center p-2 sm:flex-none sm:w-auto sm:px-3 sm:py-1.5">
+              <Building className="h-5 w-5 sm:mr-2" />
+              <span className="hidden sm:inline">Garages</span>
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="requests" className="mt-6">
@@ -321,7 +334,7 @@ export default function GarageAdminPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Garage Branches</SelectItem>
-                    {garageProviders.map(g => ( // Use garageProviders state here
+                    {garageProviders.map(g => ( 
                       <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
                     ))}
                   </SelectContent>
@@ -386,7 +399,7 @@ export default function GarageAdminPage() {
           onClose={() => setRequestToAssign(null)}
           requestId={requestToAssign.id}
           currentAssignedStaffId={requestToAssign.assignedStaffId}
-          staffList={assignableMechanics} // Pass only assignable mechanics
+          staffList={assignableMechanics} 
           onAssignStaff={handleAssignStaff}
         />
       )}
