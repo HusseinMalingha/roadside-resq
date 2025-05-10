@@ -4,6 +4,8 @@ import LoginClientPage from './login-client-page';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Loader2 } from 'lucide-react';
 
+export const dynamic = 'force-dynamic'; // Add this line
+
 function LoginSkeleton() {
   return (
     <div className="flex-grow flex items-center justify-center p-4">
@@ -31,3 +33,4 @@ export default function LoginPageContainer() {
     </Suspense>
   );
 }
+
