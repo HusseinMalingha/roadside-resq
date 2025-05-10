@@ -15,6 +15,34 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle as ShadcnAlertTitle } from "@/components/ui/alert";
 
+const GoogleLogo = () => (
+  <svg
+    version="1.1"
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 48 48"
+    className="mr-2 h-5 w-5"
+  >
+    <path
+      fill="#EA4335"
+      d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"
+    ></path>
+    <path
+      fill="#4285F4"
+      d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"
+    ></path>
+    <path
+      fill="#FBBC05"
+      d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"
+    ></path>
+    <path
+      fill="#34A853"
+      d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"
+    ></path>
+    <path fill="none" d="M0 0h48v48H0z"></path>
+  </svg>
+);
+
+
 const LoginClientPage: FC = () => {
   const { 
     signInWithGoogle, 
@@ -93,8 +121,17 @@ const LoginClientPage: FC = () => {
       setConfirmationResult(result);
       setOtpSent(true);
     } else {
-      appVerifier?.clear();
-      setAppVerifier(null);
+      // Reset appVerifier if OTP sending failed to allow re-initialization
+      if(appVerifier) {
+          appVerifier.render().then((widgetId: any) => {
+            // @ts-ignore
+            if (typeof grecaptcha !== 'undefined' && grecaptcha.reset) {
+                 // @ts-ignore
+                grecaptcha.reset(widgetId);
+            }
+          }).catch((e: any) => console.warn("Error resetting reCAPTCHA widget", e));
+      }
+      setAppVerifier(null); // Force re-setup on next attempt if it failed
     }
     setIsSubmitting(false);
   };
@@ -144,9 +181,9 @@ const LoginClientPage: FC = () => {
     <div className="flex-grow flex items-center justify-center p-4">
       <Card className="w-full max-w-md shadow-xl">
         <CardHeader className="text-center">
-          <LogIn className="mx-auto h-12 w-12 text-primary mb-3" />
-          <CardTitle className="text-2xl md:text-3xl">Login to Roadside Rescue</CardTitle>
-          <CardDescription>Sign in to access services and manage your requests.</CardDescription>
+          <LogIn className="mx-auto h-10 w-10 md:h-12 md:w-12 text-primary mb-2 md:mb-3" />
+          <CardTitle className="text-xl md:text-3xl">Login to Roadside Rescue</CardTitle>
+          <CardDescription className="text-sm md:text-base">Sign in to access services and manage your requests.</CardDescription>
         </CardHeader>
         <CardContent>
           {!isFirebaseReady && (
@@ -163,11 +200,11 @@ const LoginClientPage: FC = () => {
               <TabsTrigger value="phone" disabled={!isFirebaseReady}>Phone Sign-In</TabsTrigger>
               <TabsTrigger value="google" disabled={!isFirebaseReady}>Google Sign-In</TabsTrigger>
             </TabsList>
-            <TabsContent value="phone" className="space-y-4 pt-4">
+            <TabsContent value="phone" className="space-y-3 md:space-y-4 pt-3 md:pt-4">
               {!otpSent ? (
-                <form onSubmit={handleSendOtp} className="space-y-4">
+                <form onSubmit={handleSendOtp} className="space-y-3 md:space-y-4">
                   <div>
-                    <Label htmlFor="phone">Phone Number (e.g., +16505551234)</Label>
+                    <Label htmlFor="phone" className="text-xs md:text-sm">Phone Number (e.g., +16505551234)</Label>
                     <Input
                       id="phone"
                       type="tel"
@@ -176,6 +213,7 @@ const LoginClientPage: FC = () => {
                       placeholder="Enter your phone number"
                       required
                       disabled={isSubmitting || !isFirebaseReady}
+                      className="text-sm md:text-base"
                     />
                   </div>
                   <Button 
@@ -188,9 +226,9 @@ const LoginClientPage: FC = () => {
                   </Button>
                 </form>
               ) : (
-                <form onSubmit={handleVerifyOtp} className="space-y-4">
+                <form onSubmit={handleVerifyOtp} className="space-y-3 md:space-y-4">
                   <div>
-                    <Label htmlFor="otp">Verification Code</Label>
+                    <Label htmlFor="otp" className="text-xs md:text-sm">Verification Code</Label>
                     <Input
                       id="otp"
                       type="text"
@@ -199,29 +237,32 @@ const LoginClientPage: FC = () => {
                       placeholder="Enter OTP"
                       required
                       disabled={isSubmitting || !isFirebaseReady}
+                      className="text-sm md:text-base"
                     />
                   </div>
                   <Button type="submit" className="w-full" disabled={isSubmitting || !isFirebaseReady || !otp.trim()}>
                     {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <KeyRound className="mr-2 h-4 w-4" />}
                     Verify OTP
                   </Button>
-                  <Button variant="link" onClick={() => {setOtpSent(false); setOtp(''); setConfirmationResult(null);}} className="text-sm p-0 h-auto" disabled={isSubmitting}>Change Number</Button>
+                  <Button variant="link" onClick={() => {setOtpSent(false); setOtp(''); setConfirmationResult(null);}} className="text-xs md:text-sm p-0 h-auto" disabled={isSubmitting}>Change Number</Button>
                 </form>
               )}
             </TabsContent>
-            <TabsContent value="google" className="space-y-4 pt-4">
+            <TabsContent value="google" className="space-y-3 md:space-y-4 pt-3 md:pt-4">
               <Button 
                 onClick={handleGoogleSignIn} 
                 className="w-full" 
+                variant="outline"
                 disabled={isSubmitting || !isFirebaseReady}
               >
-                {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LogIn className="mr-2 h-4 w-4" />}
+                {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <GoogleLogo />}
                 Sign In with Google
               </Button>
             </TabsContent>
           </Tabs>
         </CardContent>
       </Card>
+      {/* This div MUST be present for invisible reCAPTCHA to work */}
       <div id="recaptcha-container-invisible"></div>
     </div>
   );
