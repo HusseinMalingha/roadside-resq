@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import type { Location, ServiceProvider, ServiceRequest as ServiceRequestType, VehicleInfo } from '@/types';
+import type { Location, ServiceProvider, ServiceRequest as ServiceRequestType, VehicleInfo, DraftServiceRequestData } from '@/types';
 import LocationRequester from '@/components/LocationRequester';
 import IssueForm from '@/components/IssueForm';
 import ProviderList from '@/components/ProviderList';
@@ -11,12 +11,13 @@ import VehicleInfoForm from '@/components/VehicleInfoForm';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { CheckCircle, MessageSquareHeart, Car, Clock, Loader2, ArrowLeft, Home, RefreshCw, LogIn, AlertCircle as AlertCircleIcon, Send, Ban, Settings } from 'lucide-react';
+import { CheckCircle, MessageSquareHeart, Car, Clock, Loader2, ArrowLeft, Home, RefreshCw, LogIn, AlertCircle as AlertCircleIcon, Send, Ban, Settings, Save } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { addServiceRequest, listenToRequestById } from '@/services/requestService'; // Import Firestore service
+import { addServiceRequest, listenToRequestById } from '@/services/requestService'; 
+import { getDraftRequest, saveDraftRequest, deleteDraftRequest } from '@/services/draftRequestService';
 
 type AppStep = 'initial' | 'details' | 'providers' | 'tracking' | 'completed';
 
@@ -35,13 +36,77 @@ export default function RoadsideRescuePage() {
   const [hasProviderArrivedSimulation, setHasProviderArrivedSimulation] = useState(false);
   
   const [serviceRequest, setServiceRequest] = useState<ServiceRequestType | null>(null);
-  const [serviceRequestId, setServiceRequestId] = useState<string | null>(null); // Store ID for listener
+  const [serviceRequestId, setServiceRequestId] = useState<string | null>(null); 
 
   const [isLocationConfirmed, setIsLocationConfirmed] = useState(false);
   const [isIssueConfirmed, setIsIssueConfirmed] = useState(false);
   const [isVehicleInfoConfirmed, setIsVehicleInfoConfirmed] = useState(false);
+  const [isLoadingDraft, setIsLoadingDraft] = useState(true);
+
 
   const { toast } = useToast();
+
+  const persistDraft = useCallback(async () => {
+    if (user && isFirebaseReady && currentStep === 'details') {
+      const draftData: Partial<Omit<DraftServiceRequestData, 'userId' | 'lastUpdated'>> = {
+        userLocation: userLocation,
+        issueDescription: issueDescription,
+        issueSummary: confirmedIssueSummary,
+        vehicleInfo: vehicleInfo,
+      };
+      try {
+        await saveDraftRequest(user.uid, draftData);
+      } catch (error) {
+        console.warn("Failed to save draft:", error);
+        // Optionally toast, but might be too noisy
+      }
+    }
+  }, [user, isFirebaseReady, userLocation, issueDescription, confirmedIssueSummary, vehicleInfo, currentStep]);
+
+  useEffect(() => {
+    if (user && isFirebaseReady && currentStep === 'details' && !isLoadingDraft) {
+      persistDraft();
+    }
+  }, [userLocation, issueDescription, confirmedIssueSummary, vehicleInfo, user, isFirebaseReady, currentStep, persistDraft, isLoadingDraft]);
+
+  useEffect(() => {
+    const loadDraft = async () => {
+      if (user && isFirebaseReady && currentStep === 'details') {
+        setIsLoadingDraft(true);
+        try {
+          const draft = await getDraftRequest(user.uid);
+          if (draft) {
+            if (draft.userLocation) {
+              setUserLocation(draft.userLocation);
+              setIsLocationConfirmed(true);
+            }
+            if (draft.issueDescription) setIssueDescription(draft.issueDescription);
+            if (draft.issueSummary) {
+              setConfirmedIssueSummary(draft.issueSummary);
+              if(draft.issueDescription) setIsIssueConfirmed(true); // Only confirm if description also exists
+            }
+            if (draft.vehicleInfo) {
+              setVehicleInfo(draft.vehicleInfo);
+              setIsVehicleInfoConfirmed(true);
+            }
+            toast({ title: "Draft Loaded", description: "Your previous in-progress request has been loaded.", duration: 3000});
+          }
+        } catch (error) {
+          console.error("Error loading draft:", error);
+          toast({ title: "Draft Load Failed", description: "Could not load your saved draft.", variant: "destructive"});
+        } finally {
+          setIsLoadingDraft(false);
+        }
+      } else {
+        setIsLoadingDraft(false);
+      }
+    };
+    
+    if (currentStep === 'details') { // Only attempt to load draft when entering details step
+        loadDraft();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, isFirebaseReady, currentStep]); // Removed toast from deps
 
   const handleLocationAcquired = useCallback((location: Location) => {
     setUserLocation(location);
@@ -96,15 +161,14 @@ export default function RoadsideRescuePage() {
     
     if (userLocation && user && vehicleInfo) { 
       const newRequestData: Omit<ServiceRequestType, 'id'> = {
-        // No 'id' field here, Firestore generates it.
-        requestId: `RR-${Math.random().toString(36).substring(2, 7).toUpperCase()}`, // Keep user-friendly ID
+        requestId: `RR-${Math.random().toString(36).substring(2, 7).toUpperCase()}`,
         userId: user.uid, 
         userLocation: userLocation,
         issueDescription: issueDescription,
         issueSummary: confirmedIssueSummary,
         vehicleInfo: vehicleInfo, 
         selectedProvider: provider,
-        requestTime: new Date(), // Will be converted to Timestamp by service
+        requestTime: new Date(), 
         status: 'Pending', 
         userName: user.displayName || user.email || "N/A",
         userPhone: user.phoneNumber || "N/A"
@@ -112,9 +176,9 @@ export default function RoadsideRescuePage() {
       
       try {
         const createdRequest = await addServiceRequest(newRequestData as Omit<ServiceRequestType, 'id' | 'requestTime'> & { requestTime: Date });
-        setServiceRequest(createdRequest); // Store the full request object with ID
-        setServiceRequestId(createdRequest.id); // Store ID for listener
-        console.log("Service Request Created and Saved to Firestore:", createdRequest);
+        setServiceRequest(createdRequest); 
+        setServiceRequestId(createdRequest.id); 
+        if (user) await deleteDraftRequest(user.uid); // Clear draft on successful submission
         setCurrentStep('tracking');
         toast({
           title: "Provider Selected!",
@@ -138,6 +202,9 @@ export default function RoadsideRescuePage() {
   };
 
   const resetApp = () => {
+    if (user && isFirebaseReady) {
+        deleteDraftRequest(user.uid).catch(err => console.warn("Failed to clear draft on reset", err));
+    }
     setCurrentStep('initial');
     setUserLocation(null);
     setIssueDescription('');
@@ -147,7 +214,7 @@ export default function RoadsideRescuePage() {
     setProviderETA(null);
     setProviderCurrentLocation(null);
     setServiceRequest(null);
-    setServiceRequestId(null); // Reset request ID
+    setServiceRequestId(null); 
     setIsLocationConfirmed(false);
     setIsIssueConfirmed(false);
     setIsVehicleInfoConfirmed(false);
@@ -166,10 +233,10 @@ export default function RoadsideRescuePage() {
     if (!user && !authLoading) {
       router.push('/login?redirect=/'); 
     } else if (user) {
-      if (role === 'admin') {
+      if (role === 'admin' || role === 'mechanic' || role === 'customer_relations') {
         toast({
-          title: "Admin Account",
-          description: "Administrators cannot make service requests. Redirecting to Garage Admin.",
+          title: "Staff Account",
+          description: "Staff members cannot make service requests. Redirecting to Garage Admin.",
           variant: "default",
         });
         router.push('/garage-admin');
@@ -179,10 +246,9 @@ export default function RoadsideRescuePage() {
     }
   };
 
-  // Listener for the current service request
   useEffect(() => {
     if (!serviceRequestId || currentStep !== 'tracking') {
-      return; // No request to listen to or not in tracking step
+      return; 
     }
 
     const unsubscribe = listenToRequestById(serviceRequestId, (updatedRequest) => {
@@ -195,71 +261,67 @@ export default function RoadsideRescuePage() {
         }
         setServiceRequest(updatedRequest);
         
-        // Update selected provider details if they changed, though less likely for an active request
         if (updatedRequest.selectedProvider) {
             setSelectedProvider(updatedRequest.selectedProvider);
-            setProviderETA(updatedRequest.selectedProvider.etaMinutes); // Update ETA if it changed
-            setProviderCurrentLocation(updatedRequest.selectedProvider.currentLocation); // Update provider location
+            setProviderETA(updatedRequest.selectedProvider.etaMinutes); 
+            setProviderCurrentLocation(updatedRequest.selectedProvider.currentLocation); 
         }
-
 
         if (updatedRequest.status === 'Completed' || updatedRequest.status === 'Cancelled') {
           setCurrentStep('completed');
-          // Tracking interval cleanup happens in the other useEffect
         }
       } else {
-        // Request might have been deleted or ID is wrong
         console.warn(`Request with ID ${serviceRequestId} not found.`);
         toast({ title: "Request Not Found", description: "The service request could not be loaded.", variant: "destructive"});
-        // Optionally, reset or redirect
-        // resetApp(); 
       }
     });
 
     return () => unsubscribe();
   }, [serviceRequestId, toast, currentStep, serviceRequest?.status]);
 
-
-  // Simulation for provider movement and arrival (client-side only effect)
   useEffect(() => {
     let trackingInterval: NodeJS.Timeout | null = null;
 
     if (currentStep === 'tracking' && selectedProvider && userLocation && providerETA !== null && serviceRequest && (serviceRequest.status === 'Accepted' || serviceRequest.status === 'In Progress')) {
-      let simulatedTravelTimeRemaining = providerETA; 
+      // Use actual distance and average speed for more realistic ETA if possible,
+      // For now, this continues the simulation based on initial ETA.
+      // The actual ETA is based on provider's initial value and doesn't count down here.
+      // The marker movement is purely visual based on initial ETA.
+      
       let currentSimulatedProviderLoc = providerCurrentLocation || selectedProvider.currentLocation; 
+      const initialProviderLat = selectedProvider.currentLocation.lat;
+      const initialProviderLng = selectedProvider.currentLocation.lng;
+      const userLat = userLocation.lat;
+      const userLng = userLocation.lng;
+      
+      // How long the visual simulation runs (e.g. 20 seconds for demo, or link to ETA)
+      const simulationDurationSeconds = Math.min(providerETA * 60, 120); // Cap at 2 mins for demo visual
+      const updateIntervalMs = 2000;
+      let elapsedSimulationTimeMs = 0;
 
       trackingInterval = setInterval(() => {
-        if (simulatedTravelTimeRemaining > 0) {
-          simulatedTravelTimeRemaining -= 1; 
-        }
+        elapsedSimulationTimeMs += updateIntervalMs;
+        const progressRatio = Math.min(elapsedSimulationTimeMs / (simulationDurationSeconds * 1000), 1);
 
         if (userLocation && currentSimulatedProviderLoc && selectedProvider) {
-            const totalSteps = providerETA > 0 ? providerETA : 1; 
-            const stepsProgressRatio = Math.min((providerETA - simulatedTravelTimeRemaining) / totalSteps, 1);
-
-            const initialProviderLat = selectedProvider.currentLocation.lat;
-            const initialProviderLng = selectedProvider.currentLocation.lng;
-            const userLat = userLocation.lat;
-            const userLng = userLocation.lng;
-            
             currentSimulatedProviderLoc = {
-              lat: initialProviderLat + (userLat - initialProviderLat) * stepsProgressRatio,
-              lng: initialProviderLng + (userLng - initialProviderLng) * stepsProgressRatio,
+              lat: initialProviderLat + (userLat - initialProviderLat) * progressRatio,
+              lng: initialProviderLng + (userLng - initialProviderLng) * progressRatio,
             };
             setProviderCurrentLocation(currentSimulatedProviderLoc);
         }
 
-        if (simulatedTravelTimeRemaining <= 0 && !hasProviderArrivedSimulation) {
+        if (progressRatio >= 1 && !hasProviderArrivedSimulation) {
           setHasProviderArrivedSimulation(true); 
           if (selectedProvider) { 
             toast({
               title: "Provider should be Arriving!",
-              description: `${selectedProvider.name} is expected at your location. Check request status: ${serviceRequest.status}.`,
+              description: `${selectedProvider.name} is expected at your location. Actual status: ${serviceRequest.status}.`,
               duration: 7000,
             });
           }
         }
-      }, 2000);
+      }, updateIntervalMs);
     }
     return () => {
       if (trackingInterval) clearInterval(trackingInterval);
@@ -268,7 +330,7 @@ export default function RoadsideRescuePage() {
 
 
   const allDetailsProvided = isLocationConfirmed && isIssueConfirmed && isVehicleInfoConfirmed;
-  const isAdminUser = user && role === 'admin';
+  const isStaffUser = user && (role === 'admin' || role === 'mechanic' || role === 'customer_relations');
 
   const renderStepContent = () => {
     if (authLoading && currentStep === 'initial') {
@@ -290,15 +352,15 @@ export default function RoadsideRescuePage() {
               </div>
               <CardTitle className="text-3xl font-bold">Emergency?</CardTitle>
               <CardDescription className="text-lg text-muted-foreground">
-                {isAdminUser 
-                  ? "Welcome, Admin. Access the Garage Management portal." 
+                {isStaffUser 
+                  ? "Welcome, Staff. Access the Garage Management portal." 
                   : "Don't worry, help is just a few taps away. Let's get you back on the road with ResQ."
                 }
               </CardDescription>
             </CardHeader>
             <CardContent>
               <p className="mb-6">
-                {isAdminUser 
+                {isStaffUser 
                   ? "Manage service requests, staff, and garage branches from the admin panel." 
                   : "We'll quickly find nearby assistance for your issue."
                 }
@@ -314,7 +376,7 @@ export default function RoadsideRescuePage() {
               )}
             </CardContent>
             <CardFooter>
-              {isAdminUser ? (
+              {isStaffUser ? (
                 <Button asChild size="lg" className="w-full text-lg py-7 bg-primary hover:bg-primary/90 text-primary-foreground">
                   <Link href="/garage-admin">
                     <Settings className="mr-2 h-5 w-5" /> Go to Admin Portal
@@ -341,11 +403,11 @@ export default function RoadsideRescuePage() {
           router.push('/login?redirect=/');
           return <div className="flex-grow flex items-center justify-center"><Loader2 className="h-12 w-12 animate-spin text-primary" /><p className="ml-3">Redirecting to login...</p></div>;
         }
-        if (isAdminUser) {
-            toast({ title: "Admin Account", description: "Admins cannot make requests. Redirecting.", variant: "default"});
+        if (isStaffUser) {
+            toast({ title: "Staff Account", description: "Staff cannot make requests. Redirecting.", variant: "default"});
             router.push('/garage-admin');
             resetApp(); 
-            return <div className="flex-grow flex items-center justify-center"><Loader2 className="h-12 w-12 animate-spin text-primary" /><p className="ml-3">Redirecting Admin...</p></div>;
+            return <div className="flex-grow flex items-center justify-center"><Loader2 className="h-12 w-12 animate-spin text-primary" /><p className="ml-3">Redirecting Staff...</p></div>;
         }
         if (!isFirebaseReady && !authLoading) { 
              return (
@@ -355,6 +417,14 @@ export default function RoadsideRescuePage() {
                     <AlertDescription>Cannot load details form as authentication service is not ready.</AlertDescription>
                      <Button onClick={resetApp} className="mt-4">Go Back</Button>
                 </Alert>
+            );
+        }
+        if (isLoadingDraft) {
+            return (
+                <div className="flex flex-col items-center justify-center flex-grow w-full py-8">
+                    <Loader2 className="h-12 w-12 animate-spin text-primary" />
+                    <p className="mt-4 text-muted-foreground">Loading your details...</p>
+                </div>
             );
         }
         return (
@@ -539,3 +609,4 @@ export default function RoadsideRescuePage() {
     </div>
   );
 }
+

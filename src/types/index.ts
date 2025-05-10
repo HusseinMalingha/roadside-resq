@@ -60,3 +60,12 @@ export interface UserProfile {
   // Add any other custom fields you might store
 }
 
+export interface DraftServiceRequestData {
+  userId: string;
+  userLocation?: Location | null;
+  issueDescription?: string;
+  issueSummary?: string;
+  vehicleInfo?: VehicleInfo | null;
+  lastUpdated?: Date;
+}
+
