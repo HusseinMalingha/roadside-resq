@@ -48,10 +48,8 @@ const LoginPage: FC = () => {
       const verifierInstance = setupRecaptcha('recaptcha-container-invisible');
       if (verifierInstance) {
         setAppVerifier(verifierInstance);
-      } else if (isFirebaseReady && !appVerifier) { 
-        // This toast fires if Firebase is ready, but reCAPTCHA setup failed, 
-        // and we don't currently have a verifier.
-        // This points to an issue with reCAPTCHA initialization itself.
+      } else {
+        // Handle reCAPTCHA initialization failure
         toast({
             title: "ReCAPTCHA Setup Issue",
             description: "Could not initialize reCAPTCHA for phone sign-in. Please refresh or try Google Sign-In.",
@@ -60,10 +58,7 @@ const LoginPage: FC = () => {
         });
       }
     }
-    // No explicit cleanup of appVerifier here to avoid issues with re-rendering/navigation
-    // The verifier instance itself might handle its lifecycle or Firebase clears it.
   }, [setupRecaptcha, appVerifier, isFirebaseReady, toast]);
-
 
   const handleGoogleSignIn = async () => {
     if (!isFirebaseReady) {
@@ -73,9 +68,8 @@ const LoginPage: FC = () => {
     setIsSubmitting(true);
     try {
       await signInWithGoogle();
-      // router.push(redirectUrl); // Redirection is handled by the first useEffect
     } catch (error) {
-      // Error is toasted by AuthContext
+      // Error handled by AuthContext
     } finally {
       setIsSubmitting(false); 
     }
@@ -99,17 +93,9 @@ const LoginPage: FC = () => {
       setConfirmationResult(result);
       setOtpSent(true);
     } else {
-      // signInWithPhoneNumberStep1 failed (returned null), likely a reCAPTCHA or phone number issue.
-      // Clear the current appVerifier to force a re-setup on next attempt (via useEffect).
-      if (appVerifier) {
-        try {
-          appVerifier.clear(); 
-        } catch (clearError) {
-          console.error("Error clearing appVerifier:", clearError);
-        }
-      }
-      setAppVerifier(null); // This will trigger the useEffect to re-initialize
-      // Toast is already handled in signInWithPhoneNumberStep1 for specific errors
+      // Clear appVerifier and re-setup it in useEffect if OTP fails
+      appVerifier?.clear();
+      setAppVerifier(null);
     }
     setIsSubmitting(false);
   };
@@ -117,7 +103,7 @@ const LoginPage: FC = () => {
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isFirebaseReady) {
-       toast({ title: "Service Unavailable", description: "Authentication services not ready.", variant: "destructive"});
+      toast({ title: "Service Unavailable", description: "Authentication services not ready.", variant: "destructive"});
       return;
     }
     if (!otp.trim() || !confirmationResult) {
@@ -131,9 +117,8 @@ const LoginPage: FC = () => {
     setIsSubmitting(true);
     try {
       await signInWithPhoneNumberStep2(confirmationResult, otp);
-      // router.push(redirectUrl); // Redirection is handled by the first useEffect
     } catch (error) {
-      // Error is toasted by AuthContext
+      // Error handled by AuthContext
     } finally {
       setIsSubmitting(false); 
     }
@@ -155,7 +140,6 @@ const LoginPage: FC = () => {
       </div>
     );
   }
-
 
   return (
     <div className="flex-grow flex items-center justify-center p-4">
@@ -222,32 +206,22 @@ const LoginPage: FC = () => {
                     {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <KeyRound className="mr-2 h-4 w-4" />}
                     Verify OTP
                   </Button>
-                  <Button variant="link" onClick={() => {setOtpSent(false); setOtp(''); setConfirmationResult(null);}} className="text-sm p-0 h-auto" disabled={isSubmitting || !isFirebaseReady}>
-                    Change phone number or resend OTP?
-                  </Button>
+                  <Button variant="link" onClick={() => {setOtpSent(false); setOtp(''); setConfirmationResult(null);}} className="text-sm p-0 h-auto" disabled={isSubmitting}>Change Number</Button>
                 </form>
               )}
-               <div id="recaptcha-container-invisible"></div>
             </TabsContent>
-            <TabsContent value="google" className="pt-4">
-               <Button onClick={handleGoogleSignIn} variant="outline" className="w-full text-base py-6" disabled={isSubmitting || !isFirebaseReady}>
-                {isSubmitting && authLoading ? ( 
-                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                ) : (
-                  <svg className="mr-2 h-5 w-5" aria-hidden="true" focusable="false" data-prefix="fab" data-icon="google" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512">
-                    <path fill="currentColor" d="M488 261.8C488 403.3 391.1 504 248 504 110.8 504 0 393.2 0 256S110.8 8 248 8c66.8 0 123 24.5 166.3 64.9l-67.5 64.9C258.5 52.6 94.3 116.6 94.3 256c0 86.5 69.1 156.6 153.7 156.6 98.2 0 135-70.4 140.8-106.9H248v-85.3h236.1c2.3 12.7 3.9 24.9 3.9 41.4z"></path>
-                  </svg>
-                )}
-                Sign in with Google
+            <TabsContent value="google" className="space-y-4 pt-4">
+              <Button 
+                onClick={handleGoogleSignIn} 
+                className="w-full" 
+                disabled={isSubmitting || !isFirebaseReady}
+              >
+                {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LogIn className="mr-2 h-4 w-4" />}
+                Sign In with Google
               </Button>
             </TabsContent>
           </Tabs>
         </CardContent>
-         <CardFooter>
-           <p className="text-xs text-muted-foreground text-center w-full">
-             By signing in, you agree to our Terms of Service and Privacy Policy.
-           </p>
-         </CardFooter>
       </Card>
     </div>
   );
