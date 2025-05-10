@@ -10,7 +10,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { SearchX, Loader2, ListFilter, MapPinned } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { getGaragesFromStorage } from '@/lib/localStorageUtils'; // Import the new getter
+import { getAllGarages } from '@/services/garageService'; // Import Firestore service
 
 interface ProviderListProps {
   userLocation: UserLocationType | null;
@@ -37,58 +37,71 @@ const ProviderList: FC<ProviderListProps> = ({ userLocation, issueType, onSelect
   const [noSpecificMatch, setNoSpecificMatch] = useState(false);
 
   useEffect(() => {
-    // Load garages from local storage on component mount
-    const garages = getGaragesFromStorage();
-    setAllProviders(garages);
-  }, []);
+    const fetchAndSetProviders = async () => {
+      setIsLoading(true);
+      try {
+        const garages = await getAllGarages();
+        setAllProviders(garages);
+      } catch (error) {
+        console.error("Error fetching garages for ProviderList:", error);
+        setAllProviders([]); // Set to empty array on error
+      } finally {
+        setIsLoading(false); // Set loading to false after initial fetch attempt
+      }
+    };
+    fetchAndSetProviders();
+  }, []); // Fetch only once on mount
+
 
   useEffect(() => {
-    if (allProviders.length === 0 && !isLoading) return; // Don't process if no providers loaded yet or still loading initial set
+    // This effect runs when allProviders, userLocation, or issueType changes,
+    // but only processes if allProviders is populated and not currently loading them.
+    if (allProviders.length === 0 && !isLoading) { // If no providers and not loading, nothing to do
+      setDisplayedProviders([]);
+      setIsLoading(false); // Ensure loading is false if it was true due to initial empty allProviders
+      return;
+    }
+    if (isLoading) return; // Don't process if initial load of allProviders is still happening
 
-    setIsLoading(true);
+
     setNoSpecificMatch(false);
+    let primaryFilteredProviders = [...allProviders]; 
+      
+    if (issueType && issueType.trim() !== "") {
+      const lowerIssueType = issueType.toLowerCase();
+      primaryFilteredProviders = allProviders.filter(p => 
+        Array.isArray(p.servicesOffered) && p.servicesOffered.some(service => 
+          service.toLowerCase().includes(lowerIssueType) || 
+          lowerIssueType.includes(service.toLowerCase()) 
+        )
+      );
+    }
     
-    // Simulate API call or data fetching - replaced with direct processing
-    setTimeout(() => {
-      let primaryFilteredProviders = [...allProviders]; // Use a copy of the state
-      
-      // Filter by service if issueType is provided
-      if (issueType && issueType.trim() !== "") {
-        const lowerIssueType = issueType.toLowerCase();
-        primaryFilteredProviders = allProviders.filter(p => 
-          p.servicesOffered.some(service => 
-            service.toLowerCase().includes(lowerIssueType) || 
-            lowerIssueType.includes(service.toLowerCase()) 
-          )
-        );
-      }
-      
+    if (userLocation) {
+      primaryFilteredProviders = primaryFilteredProviders.map(p => ({
+        ...p,
+        distanceKm: calculateDistance(userLocation, p.currentLocation)
+      })).sort((a,b) => (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity));
+    } else {
+        primaryFilteredProviders = primaryFilteredProviders.map(p => ({ ...p, distanceKm: undefined })).sort((a,b) => a.etaMinutes - b.etaMinutes);
+    }
+
+    if (primaryFilteredProviders.length > 0) {
+      setDisplayedProviders(primaryFilteredProviders);
+    } else {
+      setNoSpecificMatch(true);
+      let fallbackProviders = [...allProviders].map(p => userLocation ? ({...p, distanceKm: calculateDistance(userLocation, p.currentLocation)}) : ({...p, distanceKm: undefined}));
       if (userLocation) {
-        primaryFilteredProviders = primaryFilteredProviders.map(p => ({
-          ...p,
-          distanceKm: calculateDistance(userLocation, p.currentLocation)
-        })).sort((a,b) => (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity));
+          fallbackProviders.sort((a,b) => (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity));
       } else {
-         primaryFilteredProviders = primaryFilteredProviders.map(p => ({ ...p, distanceKm: undefined })).sort((a,b) => a.etaMinutes - b.etaMinutes);
+          fallbackProviders.sort((a,b) => a.etaMinutes - b.etaMinutes);
       }
+      setDisplayedProviders(fallbackProviders);
+    }
+    // No need to setIsLoading(false) here as it's handled by the fetch effect
+  }, [userLocation, issueType, allProviders, isLoading]); // isLoading is key here
 
-      if (primaryFilteredProviders.length > 0) {
-        setDisplayedProviders(primaryFilteredProviders);
-      } else {
-        setNoSpecificMatch(true);
-        let fallbackProviders = [...allProviders].map(p => userLocation ? ({...p, distanceKm: calculateDistance(userLocation, p.currentLocation)}) : ({...p, distanceKm: undefined}));
-        if (userLocation) {
-            fallbackProviders.sort((a,b) => (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity));
-        } else {
-            fallbackProviders.sort((a,b) => a.etaMinutes - b.etaMinutes);
-        }
-        setDisplayedProviders(fallbackProviders);
-      }
-      setIsLoading(false);
-    }, 500); // Shorter delay as data is local
-  }, [userLocation, issueType, allProviders, isLoading]); // Add isLoading to dependency array to re-trigger when allProviders is first set.
-
-  if (isLoading && displayedProviders.length === 0) { // Show loading only if there's nothing to display yet
+  if (isLoading && displayedProviders.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center p-10 text-muted-foreground w-full flex-grow">
         <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
@@ -122,7 +135,7 @@ const ProviderList: FC<ProviderListProps> = ({ userLocation, issueType, onSelect
         )}
       </CardHeader>
       <CardContent className="flex-grow flex flex-col min-h-0">
-        {displayedProviders.length === 0 && !noSpecificMatch && !isLoading ? ( // Added !isLoading here
+        {displayedProviders.length === 0 && !isLoading ? (
             <Alert variant="default" className="mt-4">
               <SearchX className="h-5 w-5" />
               <AlertTitle className="font-semibold">No Auto Xpress Garages Found</AlertTitle>
@@ -146,5 +159,3 @@ const ProviderList: FC<ProviderListProps> = ({ userLocation, issueType, onSelect
 };
 
 export default ProviderList;
-
-    

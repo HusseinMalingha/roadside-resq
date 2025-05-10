@@ -6,7 +6,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { ServiceRequest, ServiceProvider, VehicleInfo, StaffMember } from '@/types';
 import RequestList from '@/components/garage/RequestList';
 import StaffManagement from '@/components/garage/StaffManagement';
-import GarageManagement from '@/components/garage/GarageManagement'; // Import GarageManagement
+import GarageManagement from '@/components/garage/GarageManagement';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Filter, RefreshCw, Loader2, ShieldAlert, Home, Bell, Users, WrenchIcon, Briefcase, Building, ClipboardList } from 'lucide-react';
@@ -22,15 +22,11 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
-import { 
-  getRequestsFromStorage, 
-  saveRequestsToStorage, 
-  LOCAL_STORAGE_REQUESTS_KEY, 
-  getStaffMembersFromStorage,
-  getGaragesFromStorage, 
-  saveGaragesToStorage 
-} from '@/lib/localStorageUtils';
 import AssignStaffDialog from '@/components/garage/AssignStaffDialog';
+
+import { listenToRequests, updateServiceRequest } from '@/services/requestService';
+import { listenToStaffMembers, getAllStaffMembers } from '@/services/staffService'; // Using listenToStaffMembers for real-time
+import { listenToGarages, getAllGarages } from '@/services/garageService'; // Using listenToGarages for real-time
 
 
 const DEFAULT_VEHICLE_INFO: VehicleInfo = { make: 'Unknown', model: 'Unknown', year: 'N/A', licensePlate: 'N/A' };
@@ -51,141 +47,137 @@ export default function GarageAdminPage() {
 
   const [requestToAssign, setRequestToAssign] = useState<ServiceRequest | null>(null);
 
-
-  const loadData = useCallback(() => {
+  const loadInitialData = useCallback(async () => {
     setIsLoadingData(true);
-    const storedRequests = getRequestsFromStorage();
-    const processedRequests = storedRequests.map(r => ({
-        ...r,
-        vehicleInfo: r.vehicleInfo || DEFAULT_VEHICLE_INFO,
-        requestTime: new Date(r.requestTime)
-    })).sort((a, b) => b.requestTime.getTime() - a.requestTime.getTime());
-    setRequests(processedRequests);
+    try {
+      // Fetch initial data once, then rely on listeners
+      const initialRequests = await getAllRequests(); // from requestService
+      const processedRequests = initialRequests.map(r => ({
+          ...r,
+          vehicleInfo: r.vehicleInfo || DEFAULT_VEHICLE_INFO,
+      })).sort((a, b) => b.requestTime.getTime() - a.requestTime.getTime());
+      setRequests(processedRequests);
 
-    let storedGarages = getGaragesFromStorage(); 
-    if (storedGarages.length === 0) { 
-        const initialGarages = [ 
-            { 
-                id: 'ax-kampala-central', 
-                name: 'Auto Xpress - Kampala Central', 
-                phone: '(256) 772-123456', 
-                etaMinutes: 15, 
-                currentLocation: { lat: 0.3136, lng: 32.5811 }, 
-                generalLocation: "Kampala Central (City Oil Kira Rd)",
-                servicesOffered: ['Tire Services', 'Battery Replacement', 'Oil Change', 'Brake Services', 'Flat tire', 'Dead battery', 'Vehicle Diagnostics'] 
-            },
-        ];
-        saveGaragesToStorage(initialGarages);
-        storedGarages = initialGarages;
-    }
-    setGarageProviders(storedGarages);
+      const initialGarages = await getAllGarages(); // from garageService
+      setGarageProviders(initialGarages);
 
-
-    if (role === 'admin' || role === 'mechanic' || role === 'customer_relations') { 
-      const storedStaff = getStaffMembersFromStorage();
-      setStaffMembers(storedStaff);
-    }
-    setIsLoadingData(false);
-    return processedRequests;
-  }, [role]);
-  
-  useEffect(() => {
-    if (!authLoading && !user) {
-      router.push('/login?redirect=/garage-admin');
-    } else if (user) {
-      const loadedRequests = loadData();
-      if (initialLoadRef.current) {
-        const currentPendingCount = loadedRequests.filter(req => req.status === 'Pending').length;
+      if (role === 'admin' || role === 'mechanic' || role === 'customer_relations') { 
+        const initialStaff = await getAllStaffMembers(); // from staffService
+        setStaffMembers(initialStaff);
+      }
+       if (initialLoadRef.current && initialRequests) {
+        const currentPendingCount = initialRequests.filter(req => req.status === 'Pending').length;
         prevPendingCountRef.current = currentPendingCount;
         initialLoadRef.current = false;
       }
+    } catch (error) {
+      console.error("Error loading initial data:", error);
+      toast({ title: "Error Loading Data", description: "Could not fetch initial records from the database.", variant: "destructive" });
+    } finally {
+      setIsLoadingData(false);
     }
-  }, [authLoading, user, router, loadData]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [role, toast]); // loadInitialData doesn't need to change frequently based on these
 
+ useEffect(() => {
+    if (!authLoading && !user) {
+      router.push('/login?redirect=/garage-admin');
+    } else if (user && initialLoadRef.current) { // Only call loadInitialData once after user is available
+      loadInitialData();
+    }
+  }, [authLoading, user, router, loadInitialData]);
+
+
+  // Listener for service requests
   useEffect(() => {
-    const handleStorageChange = (event: StorageEvent) => {
-      if (event.key === LOCAL_STORAGE_REQUESTS_KEY) {
-        const newRequests = loadData(); 
-        const currentPendingCount = newRequests.filter(req => req.status === 'Pending').length;
-
-        if (currentPendingCount > prevPendingCountRef.current) {
-          toast({
+    if (!user) return; // Don't listen if no user
+    const unsubscribeRequests = listenToRequests((updatedRequests) => {
+      const processedRequests = updatedRequests.map(r => ({
+        ...r,
+        vehicleInfo: r.vehicleInfo || DEFAULT_VEHICLE_INFO,
+      })).sort((a, b) => b.requestTime.getTime() - a.requestTime.getTime());
+      
+      const currentPendingCount = processedRequests.filter(req => req.status === 'Pending').length;
+      if (!initialLoadRef.current && currentPendingCount > prevPendingCountRef.current) {
+         toast({
             title: "🔔 New Pending Request(s)!",
             description: `A new service request has been logged. ${currentPendingCount} pending.`,
             variant: "default",
             duration: 7000,
           });
-        }
-        prevPendingCountRef.current = currentPendingCount;
-      }
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
-  }, [loadData, toast]);
-
-  useEffect(() => {
-    if (initialLoadRef.current || isLoadingData) return;
-
-    const currentPendingRequests = requests.filter(req => req.status === 'Pending');
-    const currentPendingCount = currentPendingRequests.length;
-    
-    if (currentPendingCount > prevPendingCountRef.current) {
-      toast({
-        title: "🔔 New Pending Service Request(s)",
-        description: `You have ${currentPendingCount} pending request(s). ${currentPendingCount - prevPendingCountRef.current} new.`,
-        variant: "default",
-        duration: 6000,
-      });
-    } else if (currentPendingCount < prevPendingCountRef.current && prevPendingCountRef.current > 0) {
-        toast({
+      } else if (!initialLoadRef.current && currentPendingCount < prevPendingCountRef.current && prevPendingCountRef.current > 0) {
+         toast({
             title: "ℹ️ Pending Requests Updated",
             description: `Number of pending requests changed from ${prevPendingCountRef.current} to ${currentPendingCount}.`,
             duration: 4000,
         });
-    }
-    prevPendingCountRef.current = currentPendingCount;
-  }, [requests, toast, isLoadingData]);
-
-  const handleStatusChange = (requestId: string, newStatus: ServiceRequest['status'], notes?: string, resources?: string) => {
-    let requestNeedsAssignment = false;
-    const updatedRequests = requests.map(req => {
-      if (req.id === requestId) {
-        const updatedReq = { ...req, status: newStatus };
-        if (notes !== undefined) updatedReq.mechanicNotes = notes;
-        if (resources !== undefined) updatedReq.resourcesUsed = resources;
-
-        if (role === 'admin' && newStatus === 'Accepted' && !updatedReq.assignedStaffId) {
-          requestNeedsAssignment = true;
-          setRequestToAssign(updatedReq); 
-        }
-        return updatedReq;
       }
-      return req;
+      prevPendingCountRef.current = currentPendingCount;
+      setRequests(processedRequests);
+      if (isLoadingData) setIsLoadingData(false); // Mark as not loading once first data arrives
     });
-    setRequests(updatedRequests);
-    saveRequestsToStorage(updatedRequests);
+    return () => unsubscribeRequests();
+  }, [user, toast, isLoadingData]); // Added isLoadingData
 
-    if (!requestNeedsAssignment) { 
+  // Listener for staff members
+  useEffect(() => {
+    if (!user || (role !== 'admin' && role !== 'mechanic' && role !== 'customer_relations')) return;
+    const unsubscribeStaff = listenToStaffMembers(setStaffMembers);
+    return () => unsubscribeStaff();
+  }, [user, role]);
+
+  // Listener for garage providers
+  useEffect(() => {
+    if (!user) return;
+    const unsubscribeGarages = listenToGarages(setGarageProviders);
+    return () => unsubscribeGarages();
+  }, [user]);
+
+
+  const handleStatusChange = async (requestId: string, newStatus: ServiceRequest['status'], notes?: string, resources?: string) => {
+    let requestNeedsAssignment = false;
+    const currentRequest = requests.find(req => req.id === requestId);
+    if (!currentRequest) return;
+
+    const updateData: Partial<ServiceRequest> = { status: newStatus };
+    if (notes !== undefined) updateData.mechanicNotes = notes;
+    if (resources !== undefined) updateData.resourcesUsed = resources;
+
+    try {
+      await updateServiceRequest(requestId, updateData);
+
+      if (role === 'admin' && newStatus === 'Accepted' && !currentRequest.assignedStaffId) {
+        requestNeedsAssignment = true;
+        // Find the updated request from state after Firestore listener updates it, or use currentRequest
+        const potentiallyUpdatedRequest = requests.find(req => req.id === requestId) || { ...currentRequest, status: newStatus };
+        setRequestToAssign(potentiallyUpdatedRequest); 
+      }
+      
+      if (!requestNeedsAssignment) {
         toast({
           title: "Status Updated",
           description: `Request ${requestId.slice(0,10)}... status changed to ${newStatus}.`,
         });
+      }
+    } catch (error) {
+      console.error("Error updating request status:", error);
+      toast({ title: "Update Failed", description: "Could not update request status.", variant: "destructive" });
     }
   };
   
-  const handleAssignStaff = (requestId: string, staffId: string | null) => {
-    const updatedRequests = requests.map(req =>
-      req.id === requestId ? { ...req, assignedStaffId: staffId || undefined } : req
-    );
-    setRequests(updatedRequests);
-    saveRequestsToStorage(updatedRequests);
-    const staffName = staffMembers.find(s => s.id === staffId)?.name || 'Unassigned';
-    toast({
-      title: "Request Assignment Updated",
-      description: `Request ${requestId.slice(0,10)}... assigned to ${staffName}.`,
-    });
-    setRequestToAssign(null); 
+  const handleAssignStaff = async (requestId: string, staffId: string | null) => {
+    try {
+      await updateServiceRequest(requestId, { assignedStaffId: staffId || undefined });
+      const staffName = staffMembers.find(s => s.id === staffId)?.name || 'Unassigned';
+      toast({
+        title: "Request Assignment Updated",
+        description: `Request ${requestId.slice(0,10)}... assigned to ${staffName}.`,
+      });
+      setRequestToAssign(null); 
+    } catch (error) {
+      console.error("Error assigning staff:", error);
+      toast({ title: "Assignment Failed", description: "Could not assign staff to the request.", variant: "destructive" });
+    }
   };
 
   const getVisibleRequests = () => {
@@ -212,13 +204,13 @@ export default function GarageAdminPage() {
   const occupiedMechanicIds = new Set(requestsInProgress.map(req => req.assignedStaffId).filter(id => !!id));
   const assignableMechanics = allMechanics.filter(mech => !occupiedMechanicIds.has(mech.id));
 
-  const refreshData = () => {
-    loadData(); 
+  const refreshData = () => { // This might be less necessary with real-time listeners
+    loadInitialData(); 
     setSelectedGarage('all');
     setSelectedStatus('all');
     toast({
-      title: "Data Refreshed",
-      description: "Request, staff, and garage lists have been updated from storage.",
+      title: "Data Reloaded",
+      description: "Attempted to reload all data from the database.",
       duration: 3000
     });
   }
@@ -267,11 +259,6 @@ export default function GarageAdminPage() {
 
   const pendingRequestCount = requests.filter(req => req.status === 'Pending').length;
   const currentRoleIcon = role === 'admin' ? Users : role === 'mechanic' ? WrenchIcon : Briefcase;
-
-  const tabsForRole = ['requests'];
-  if (role === 'admin') {
-    tabsForRole.push('staff', 'garages');
-  }
 
 
   return (
@@ -359,10 +346,10 @@ export default function GarageAdminPage() {
                 Displaying {visibleRequests.length} of {requests.length} total requests. 
                 ({pendingRequestCount} pending)
               </p>
-               {isLoadingData && !initialLoadRef.current ? (
+               {isLoadingData && initialLoadRef.current ? ( // Show main loading only on initial load
                 <div className="flex items-center justify-center py-6">
                   <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                  <p className="ml-3">Refreshing requests...</p>
+                  <p className="ml-3">Loading requests...</p>
                 </div>
               ) : (
                 <div className="min-h-[300px]"> 
@@ -370,7 +357,7 @@ export default function GarageAdminPage() {
                     requests={visibleRequests} 
                     onStatusChange={handleStatusChange} 
                     onAssignStaff={role === 'admin' ? handleAssignStaff : undefined}
-                    staffList={allMechanics} 
+                    staffList={staffMembers} // Pass all staff for display
                     assignableStaffList={assignableMechanics} 
                     currentUserRole={role}
                     currentUserId={user?.uid} 
@@ -399,11 +386,11 @@ export default function GarageAdminPage() {
           onClose={() => setRequestToAssign(null)}
           requestId={requestToAssign.id}
           currentAssignedStaffId={requestToAssign.assignedStaffId}
-          staffList={assignableMechanics} 
+          allMechanics={allMechanics} // Pass all mechanics for potential name lookup
+          availableMechanics={assignableMechanics} // Pass available for selection
           onAssignStaff={handleAssignStaff}
         />
       )}
     </div>
   );
 }
-

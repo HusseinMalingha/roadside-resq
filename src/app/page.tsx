@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
@@ -16,8 +15,8 @@ import { CheckCircle, MessageSquareHeart, Car, Clock, Loader2, ArrowLeft, Home, 
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
-import { getRequestsFromStorage, saveRequestsToStorage } from '@/lib/localStorageUtils';
 import Link from 'next/link';
+import { addServiceRequest, listenToRequestById } from '@/services/requestService'; // Import Firestore service
 
 type AppStep = 'initial' | 'details' | 'providers' | 'tracking' | 'completed';
 
@@ -36,6 +35,7 @@ export default function RoadsideRescuePage() {
   const [hasProviderArrivedSimulation, setHasProviderArrivedSimulation] = useState(false);
   
   const [serviceRequest, setServiceRequest] = useState<ServiceRequestType | null>(null);
+  const [serviceRequestId, setServiceRequestId] = useState<string | null>(null); // Store ID for listener
 
   const [isLocationConfirmed, setIsLocationConfirmed] = useState(false);
   const [isIssueConfirmed, setIsIssueConfirmed] = useState(false);
@@ -88,40 +88,53 @@ export default function RoadsideRescuePage() {
     }
   };
 
-  const handleSelectProvider = (provider: ServiceProvider) => {
+  const handleSelectProvider = async (provider: ServiceProvider) => {
     setSelectedProvider(provider);
     setProviderETA(provider.etaMinutes); 
     setProviderCurrentLocation(provider.currentLocation);
     setHasProviderArrivedSimulation(false); 
     
     if (userLocation && user && vehicleInfo) { 
-      const newRequest: ServiceRequestType = {
-        id: `req-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`, 
-        requestId: `RR-${Math.random().toString(36).substring(2, 7).toUpperCase()}`,
+      const newRequestData: Omit<ServiceRequestType, 'id'> = {
+        // No 'id' field here, Firestore generates it.
+        requestId: `RR-${Math.random().toString(36).substring(2, 7).toUpperCase()}`, // Keep user-friendly ID
         userId: user.uid, 
         userLocation: userLocation,
         issueDescription: issueDescription,
         issueSummary: confirmedIssueSummary,
         vehicleInfo: vehicleInfo, 
         selectedProvider: provider,
-        requestTime: new Date(),
+        requestTime: new Date(), // Will be converted to Timestamp by service
         status: 'Pending', 
         userName: user.displayName || user.email || "N/A",
         userPhone: user.phoneNumber || "N/A"
       };
-      setServiceRequest(newRequest);
       
-      const currentRequests = getRequestsFromStorage();
-      saveRequestsToStorage([...currentRequests, newRequest]);
-      
-      console.log("Service Request Created and Saved to localStorage:", newRequest); 
+      try {
+        const createdRequest = await addServiceRequest(newRequestData as Omit<ServiceRequestType, 'id' | 'requestTime'> & { requestTime: Date });
+        setServiceRequest(createdRequest); // Store the full request object with ID
+        setServiceRequestId(createdRequest.id); // Store ID for listener
+        console.log("Service Request Created and Saved to Firestore:", createdRequest);
+        setCurrentStep('tracking');
+        toast({
+          title: "Provider Selected!",
+          description: `You've selected ${provider.name}. They are on their way. Request ID: ${createdRequest.requestId}`,
+        });
+      } catch (error) {
+        console.error("Error creating service request:", error);
+        toast({
+          title: "Request Failed",
+          description: "Could not submit your service request. Please try again.",
+          variant: "destructive",
+        });
+      }
+    } else {
+       toast({
+        title: "Missing Information",
+        description: "Cannot create request. User, location or vehicle info is missing.",
+        variant: "destructive",
+      });
     }
-    
-    setCurrentStep('tracking');
-     toast({
-      title: "Provider Selected!",
-      description: `You've selected ${provider.name}. They are on their way.`,
-    });
   };
 
   const resetApp = () => {
@@ -134,6 +147,7 @@ export default function RoadsideRescuePage() {
     setProviderETA(null);
     setProviderCurrentLocation(null);
     setServiceRequest(null);
+    setServiceRequestId(null); // Reset request ID
     setIsLocationConfirmed(false);
     setIsIssueConfirmed(false);
     setIsVehicleInfoConfirmed(false);
@@ -158,18 +172,59 @@ export default function RoadsideRescuePage() {
           description: "Administrators cannot make service requests. Redirecting to Garage Admin.",
           variant: "default",
         });
-        router.push('/garage-admin'); // Redirect admin to their portal
+        router.push('/garage-admin');
         return;
       }
       setCurrentStep('details');
     }
   };
 
+  // Listener for the current service request
   useEffect(() => {
-    let trackingInterval: NodeJS.Timeout;
-    let statusPollInterval: NodeJS.Timeout;
+    if (!serviceRequestId || currentStep !== 'tracking') {
+      return; // No request to listen to or not in tracking step
+    }
 
-    if (currentStep === 'tracking' && selectedProvider && userLocation && providerETA !== null && serviceRequest) {
+    const unsubscribe = listenToRequestById(serviceRequestId, (updatedRequest) => {
+      if (updatedRequest) {
+        if (serviceRequest?.status !== updatedRequest.status) {
+           toast({
+            title: "Request Status Updated",
+            description: `Your request status is now: ${updatedRequest.status}`,
+          });
+        }
+        setServiceRequest(updatedRequest);
+        
+        // Update selected provider details if they changed, though less likely for an active request
+        if (updatedRequest.selectedProvider) {
+            setSelectedProvider(updatedRequest.selectedProvider);
+            setProviderETA(updatedRequest.selectedProvider.etaMinutes); // Update ETA if it changed
+            setProviderCurrentLocation(updatedRequest.selectedProvider.currentLocation); // Update provider location
+        }
+
+
+        if (updatedRequest.status === 'Completed' || updatedRequest.status === 'Cancelled') {
+          setCurrentStep('completed');
+          // Tracking interval cleanup happens in the other useEffect
+        }
+      } else {
+        // Request might have been deleted or ID is wrong
+        console.warn(`Request with ID ${serviceRequestId} not found.`);
+        toast({ title: "Request Not Found", description: "The service request could not be loaded.", variant: "destructive"});
+        // Optionally, reset or redirect
+        // resetApp(); 
+      }
+    });
+
+    return () => unsubscribe();
+  }, [serviceRequestId, toast, currentStep, serviceRequest?.status]);
+
+
+  // Simulation for provider movement and arrival (client-side only effect)
+  useEffect(() => {
+    let trackingInterval: NodeJS.Timeout | null = null;
+
+    if (currentStep === 'tracking' && selectedProvider && userLocation && providerETA !== null && serviceRequest && (serviceRequest.status === 'Accepted' || serviceRequest.status === 'In Progress')) {
       let simulatedTravelTimeRemaining = providerETA; 
       let currentSimulatedProviderLoc = providerCurrentLocation || selectedProvider.currentLocation; 
 
@@ -199,35 +254,17 @@ export default function RoadsideRescuePage() {
           if (selectedProvider) { 
             toast({
               title: "Provider should be Arriving!",
-              description: `${selectedProvider.name} is expected at your location. Check request status.`,
+              description: `${selectedProvider.name} is expected at your location. Check request status: ${serviceRequest.status}.`,
               duration: 7000,
             });
           }
         }
       }, 2000);
-
-      statusPollInterval = setInterval(() => {
-        const allRequests = getRequestsFromStorage();
-        const updatedRequest = allRequests.find(req => req.id === serviceRequest.id);
-        if (updatedRequest && updatedRequest.status !== serviceRequest.status) {
-          toast({
-            title: "Request Status Updated",
-            description: `Your request status is now: ${updatedRequest.status}`,
-          });
-          setServiceRequest(updatedRequest); 
-          if (updatedRequest.status === 'Completed' || updatedRequest.status === 'Cancelled') {
-            setCurrentStep('completed');
-            clearInterval(trackingInterval); 
-            clearInterval(statusPollInterval); 
-          }
-        }
-      }, 5000); 
     }
     return () => {
-      clearInterval(trackingInterval);
-      clearInterval(statusPollInterval);
+      if (trackingInterval) clearInterval(trackingInterval);
     };
-  }, [currentStep, selectedProvider, userLocation, providerETA, toast, serviceRequest, hasProviderArrivedSimulation]); 
+  }, [currentStep, selectedProvider, userLocation, providerETA, toast, serviceRequest, hasProviderArrivedSimulation, providerCurrentLocation]); 
 
 
   const allDetailsProvided = isLocationConfirmed && isIssueConfirmed && isVehicleInfoConfirmed;
@@ -304,7 +341,7 @@ export default function RoadsideRescuePage() {
           router.push('/login?redirect=/');
           return <div className="flex-grow flex items-center justify-center"><Loader2 className="h-12 w-12 animate-spin text-primary" /><p className="ml-3">Redirecting to login...</p></div>;
         }
-        if (isAdminUser) { // Should not reach here if initial step logic is correct, but as a safeguard
+        if (isAdminUser) {
             toast({ title: "Admin Account", description: "Admins cannot make requests. Redirecting.", variant: "default"});
             router.push('/garage-admin');
             resetApp(); 
@@ -389,7 +426,7 @@ export default function RoadsideRescuePage() {
         return (
           <div className="w-full max-w-2xl space-y-6 animate-fadeIn">
             <div className="flex justify-between items-center">
-              <Button variant="outline" onClick={() => setCurrentStep('providers')} className="mb-2 self-start">
+              <Button variant="outline" onClick={() => setCurrentStep('providers')} className="mb-2 self-start" disabled={serviceRequest.status === 'Completed' || serviceRequest.status === 'Cancelled'}>
                 <ArrowLeft className="mr-2 h-4 w-4" /> Change Provider
               </Button>
               <span className={`px-3 py-1 text-sm font-semibold rounded-full text-white ${
@@ -448,6 +485,9 @@ export default function RoadsideRescuePage() {
                 </div>
               </CardContent>
             </Card>
+             <Button variant="outline" onClick={resetApp} className="w-full mt-4">
+                <Home className="mr-2 h-4 w-4" /> Start New Request
+            </Button>
           </div>
         );
       case 'completed':
@@ -485,11 +525,6 @@ export default function RoadsideRescuePage() {
               <Button size="lg" className="w-full text-lg py-7" onClick={resetApp}>
                 <Home className="mr-2 h-5 w-5" /> Back to Home
               </Button>
-               {serviceRequest.status !== 'Completed' && serviceRequest.status !== 'Cancelled' && (
-                 <Button size="sm" variant="outline" className="w-full" onClick={() => {setHasProviderArrivedSimulation(false); setCurrentStep('tracking');}}>
-                  <RefreshCw className="mr-2 h-4 w-4" /> View Tracking Again
-                </Button>
-               )}
             </CardFooter>
           </Card>
         );
@@ -504,4 +539,3 @@ export default function RoadsideRescuePage() {
     </div>
   );
 }
-

@@ -11,9 +11,26 @@ import {
   signOut, 
   type NextOrObserver, 
   type User, 
-  type Auth as FirebaseAuthType, // Renamed to avoid conflict
+  type Auth as FirebaseAuthType,
   type ConfirmationResult 
 } from 'firebase/auth';
+import { 
+  getFirestore, 
+  collection, 
+  doc, 
+  getDoc, 
+  getDocs, 
+  setDoc, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc, 
+  query, 
+  where, 
+  orderBy, 
+  onSnapshot,
+  Timestamp,
+  type Firestore
+} from 'firebase/firestore';
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -27,6 +44,7 @@ const firebaseConfig = {
 
 let app: FirebaseApp | null = null;
 let authInstance: FirebaseAuthType | null = null;
+let dbInstance: Firestore | null = null;
 
 const allConfigValuesPresent =
   firebaseConfig.apiKey &&
@@ -35,38 +53,37 @@ const allConfigValuesPresent =
   firebaseConfig.storageBucket &&
   firebaseConfig.messagingSenderId &&
   firebaseConfig.appId;
-  // measurementId is often optional for basic auth, so not checked here for critical initialization
 
-if (typeof window !== 'undefined') { // Ensure Firebase is initialized only on the client-side
+if (typeof window !== 'undefined') { 
   if (!getApps().length) {
     if (allConfigValuesPresent) {
       try {
         app = initializeApp(firebaseConfig);
         authInstance = getAuth(app);
-        console.log("Firebase initialized successfully.");
+        dbInstance = getFirestore(app);
+        console.log("Firebase initialized successfully with Auth and Firestore.");
       } catch (e) {
         console.error("Error initializing Firebase app:", e);
-        // app and authInstance will remain null
       }
     } else {
       console.error(
         'Firebase configuration is incomplete. Please check your .env file and ensure all NEXT_PUBLIC_FIREBASE_* variables are set. Firebase features will be disabled.'
       );
-      // app and authInstance will remain null
     }
   } else {
-    app = getApp(); // If already initialized, get the app
-    if (app) { // Ensure app is not null before calling getAuth
-        authInstance = getAuth(app); // Get auth from the existing app
+    app = getApp(); 
+    if (app) { 
+        authInstance = getAuth(app); 
+        dbInstance = getFirestore(app);
     } else {
         console.error("Firebase app was expected to be initialized but is null.");
     }
   }
 }
 
-
 export const firebaseApp = app;
-export const auth = authInstance; // This will be null if initialization failed or on server
+export const auth = authInstance; 
+export const db = dbInstance; // Export Firestore instance
 
 export {
   GoogleAuthProvider,
@@ -76,8 +93,22 @@ export {
   signInWithPhoneNumber,
   onAuthStateChanged,
   signOut,
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  setDoc,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  query,
+  where,
+  orderBy,
+  onSnapshot,
+  Timestamp,
   type NextOrObserver,
   type User,
   type FirebaseAuthType,
-  type ConfirmationResult
+  type ConfirmationResult,
+  type Firestore
 };

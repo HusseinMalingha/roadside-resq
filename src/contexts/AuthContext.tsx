@@ -13,19 +13,17 @@ import {
   signInWithPhoneNumber, 
   type ConfirmationResult, 
   onAuthStateChanged,
-  type FirebaseAuthType 
+  type FirebaseAuthType,
+  db as firestoreInstance // Import db instance
 } from '@/lib/firebase'; 
 import { useRouter } from 'next/navigation';
 import { useToast } from "@/hooks/use-toast";
-import { getStaffMembersFromStorage } from '@/lib/localStorageUtils'; // Import for dynamic staff role checking
+import { getStaffMemberByEmail } from '@/services/staffService'; // Import Firestore service
 
 export type UserRole = 'admin' | 'mechanic' | 'customer_relations' | 'user' | null;
 
-// Admin credentials - can be updated here
 const ADMIN_EMAIL = 'husseinmalingha@gmail.com';
 const ADMIN_PHONE_NUMBER = '+256759794023';
-
-// Hardcoded staff email lists are removed as roles are now determined dynamically from local storage.
 
 interface AuthContextType {
   user: User | null;
@@ -50,12 +48,12 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
   const { toast } = useToast();
 
   useEffect(() => {
-    if (firebaseAuthInstance) {
+    if (firebaseAuthInstance && firestoreInstance) { // Check for Firestore instance as well
       setIsFirebaseReady(true);
-      const unsubscribe = onAuthStateChanged(firebaseAuthInstance, (currentUser) => {
+      const unsubscribe = onAuthStateChanged(firebaseAuthInstance, async (currentUser) => {
         setUser(currentUser);
         if (currentUser) {
-          let determinedRole: UserRole = 'user'; // Default to 'user'
+          let determinedRole: UserRole = 'user'; 
           const userEmailLower = currentUser.email?.toLowerCase();
 
           if (
@@ -64,14 +62,14 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
           ) {
             determinedRole = 'admin';
           } else if (userEmailLower) {
-            // Check against dynamically stored staff members
-            const staffMembers = getStaffMembersFromStorage();
-            const matchedStaff = staffMembers.find(staff => staff.email.toLowerCase() === userEmailLower);
-            if (matchedStaff) {
-              // Ensure matchedStaff.role is one of 'mechanic' or 'customer_relations'
-              if (matchedStaff.role === 'mechanic' || matchedStaff.role === 'customer_relations') {
-                 determinedRole = matchedStaff.role;
+            try {
+              const staffProfile = await getStaffMemberByEmail(userEmailLower);
+              if (staffProfile && (staffProfile.role === 'mechanic' || staffProfile.role === 'customer_relations')) {
+                determinedRole = staffProfile.role;
               }
+            } catch (error) {
+              console.error("Error fetching staff role from Firestore:", error);
+              // Keep default 'user' role or handle error as appropriate
             }
           }
           setRole(determinedRole);
@@ -87,14 +85,14 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
       if (typeof window !== 'undefined') {
         toast({
           title: "Firebase Not Configured",
-          description: "Authentication services are unavailable. Please check environment variables.",
+          description: "Authentication or Database services are unavailable. Please check environment variables.",
           variant: "destructive",
           duration: 10000,
         });
       }
-      console.warn("AuthContext: Firebase auth instance is not available. Auth features will be disabled.");
+      console.warn("AuthContext: Firebase auth or Firestore instance is not available. Auth features will be disabled.");
     }
-  }, [toast]);
+  }, [toast]); // Removed firestoreInstance from dependency array as it's stable after init
 
   const signInWithGoogle = async () => {
     if (!firebaseAuthInstance || !isFirebaseReady) {
@@ -124,7 +122,6 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
     if (typeof window !== 'undefined') {
       const recaptchaContainer = document.getElementById(elementId);
       if (recaptchaContainer) {
-        // Clear any existing reCAPTCHA instance in the container
         while (recaptchaContainer.firstChild) {
             recaptchaContainer.removeChild(recaptchaContainer.firstChild);
         }
@@ -252,4 +249,3 @@ export const useAuth = (): AuthContextType => {
   }
   return context;
 };
-

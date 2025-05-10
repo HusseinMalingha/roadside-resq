@@ -5,14 +5,13 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import { getRequestsFromStorage } from '@/lib/localStorageUtils';
+import { getUserRequests } from '@/services/requestService'; // Import Firestore service
 import type { ServiceRequest } from '@/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Loader2, ListChecks, Home, AlertCircle, CalendarDays, Car, Users, Info } from 'lucide-react';
+import { Loader2, ListChecks, Home, AlertCircle, Users, Info } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Badge } from '@/components/ui/badge';
-import RequestHistoryItem from '@/components/request-history/RequestHistoryItem'; // Will create this component
+import RequestHistoryItem from '@/components/request-history/RequestHistoryItem';
 
 export default function MyRequestsPage() {
   const { user, loading: authLoading, isFirebaseReady } = useAuth();
@@ -25,14 +24,19 @@ export default function MyRequestsPage() {
       if (!user) {
         router.push('/login?redirect=/my-requests');
       } else {
-        const allRequests = getRequestsFromStorage();
-        // Filter requests by userId. For older requests without userId, this might not work.
-        // Consider adding a fallback or note if handling very old data.
-        const filteredRequests = allRequests
-          .filter(req => req.userId === user.uid)
-          .sort((a, b) => new Date(b.requestTime).getTime() - new Date(a.requestTime).getTime()); // Sort by most recent
-        setUserRequests(filteredRequests);
-        setIsLoading(false);
+        setIsLoading(true);
+        getUserRequests(user.uid)
+          .then((requests) => {
+            // Sorting is already handled by the service if orderBy is used
+            setUserRequests(requests);
+          })
+          .catch(error => {
+            console.error("Failed to fetch user requests:", error);
+            // Optionally, show a toast message for the error
+          })
+          .finally(() => {
+            setIsLoading(false);
+          });
       }
     }
   }, [user, authLoading, router]);
@@ -47,7 +51,6 @@ export default function MyRequestsPage() {
   }
 
   if (!user && !authLoading && isFirebaseReady) {
-     // Should have been redirected, but as a fallback:
     return (
         <div className="flex-grow flex flex-col items-center justify-center text-center p-6">
             <Card className="w-full max-w-md shadow-xl">
@@ -96,7 +99,7 @@ export default function MyRequestsPage() {
               <p className="text-sm text-muted-foreground mt-1">You haven't made any service requests yet.</p>
             </div>
           ) : (
-            <ScrollArea className="h-[calc(100vh-250px)] md:h-[calc(100vh-300px)]"> {/* Adjust height as needed */}
+            <ScrollArea className="h-[calc(100vh-250px)] md:h-[calc(100vh-300px)]">
               <div className="space-y-4 p-1">
                 {userRequests.map((request) => (
                   <RequestHistoryItem key={request.id} request={request} />

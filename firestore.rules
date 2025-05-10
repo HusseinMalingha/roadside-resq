@@ -1,0 +1,63 @@
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper function to check if user is admin by looking up their role in staffMembers collection
+    // Assumes user.uid is used as document ID in staffMembers for staff.
+    function isAdmin() {
+      return request.auth != null && get(/databases/$(database)/documents/staffMembers/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    // Helper function to check if user is an authenticated staff member (any role)
+    // by checking if a document exists for them in staffMembers
+     function isStaff() {
+      return request.auth != null && exists(/databases/$(database)/documents/staffMembers/$(request.auth.uid));
+    }
+
+    // Helper function to check if user is the owner of the request
+    function isRequestOwner(requestId) {
+      return request.auth != null && get(/databases/$(database)/documents/serviceRequests/$(requestId)).data.userId == request.auth.uid;
+    }
+
+    // Helper function to check if user is assigned mechanic
+    function isAssignedMechanic(requestId) {
+      if (request.auth == null) return false;
+      let requestDoc = get(/databases/$(database)/documents/serviceRequests/$(requestId)).data;
+      // Check if the user is a staff member and their role is mechanic
+      let staffDoc = get(/databases/$(database)/documents/staffMembers/$(request.auth.uid)).data;
+      return staffDoc.role == 'mechanic' && requestDoc.assignedStaffId == request.auth.uid;
+    }
+    
+    // Helper function to check if user is customer relations
+    function isCustomerRelations() {
+      if (request.auth == null) return false;
+      // Check if the user is a staff member and their role is customer_relations
+      let staffDoc = get(/databases/$(database)/documents/staffMembers/$(request.auth.uid)).data;
+      return staffDoc.role == 'customer_relations';
+    }
+
+    match /serviceRequests/{requestId} {
+      allow read: if request.auth != null && (isAdmin() || isRequestOwner(requestId) || isAssignedMechanic(requestId) || isCustomerRelations());
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid; // User can create their own requests
+      allow update: if request.auth != null && (isAdmin() || isAssignedMechanic(requestId)); // Admin or assigned mechanic can update
+      allow delete: if request.auth != null && isAdmin(); // Only admin can delete (consider soft delete)
+    }
+
+    // For staffMembers, user.uid should ideally be the document ID for direct lookup.
+    // If email is used as ID, rules need adjustment or ensure email is unique and verified.
+    // Assuming user.uid is used as staff member document ID for role checks.
+    match /staffMembers/{staffId} {
+      // Admin can read any staff. Staff can read their own profile. General users can read for role checks (e.g. for AuthContext).
+      allow read: if request.auth != null && (isAdmin() || request.auth.uid == staffId || request.auth != null); 
+      allow list: if request.auth != null && isAdmin(); // Only admin can list all staff
+      allow create, update, delete: if request.auth != null && isAdmin();
+    }
+
+    match /garages/{garageId} {
+      allow read: if request.auth != null; // All authenticated users can read garage list
+      allow list: if request.auth != null; // All authenticated users can list garages
+      allow create, update, delete: if request.auth != null && isAdmin(); // Only admin can manage garages
+    }
+  }
+}

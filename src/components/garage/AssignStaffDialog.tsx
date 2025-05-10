@@ -30,7 +30,8 @@ interface AssignStaffDialogProps {
   onClose: () => void;
   requestId: string;
   currentAssignedStaffId?: string | null;
-  staffList: StaffMember[]; // This list should be pre-filtered to *assignable* mechanics by the parent
+  availableMechanics: StaffMember[]; // This list should be pre-filtered to *assignable* mechanics by the parent
+  allMechanics: StaffMember[]; // Full list of all mechanics for looking up names
   onAssignStaff: (requestId: string, staffId: string | null) => void;
 }
 
@@ -39,7 +40,8 @@ const AssignStaffDialog: React.FC<AssignStaffDialogProps> = ({
   onClose,
   requestId,
   currentAssignedStaffId,
-  staffList, // Expects pre-filtered list of *available* mechanics
+  availableMechanics, 
+  allMechanics,
   onAssignStaff,
 }) => {
   const [selectedStaffId, setSelectedStaffId] = useState<string | null>(currentAssignedStaffId || null);
@@ -63,7 +65,7 @@ const AssignStaffDialog: React.FC<AssignStaffDialogProps> = ({
           <DialogDescription>Select an available mechanic to assign to this service request.</DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
-          {staffList.length === 0 && !currentAssignedStaffId && (
+          {availableMechanics.length === 0 && !currentAssignedStaffId && (
             <Alert variant="default">
               <Users className="h-4 w-4" />
               <AlertTitle>No Mechanics Available</AlertTitle>
@@ -87,15 +89,16 @@ const AssignStaffDialog: React.FC<AssignStaffDialogProps> = ({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="unassign">Unassign</SelectItem>
-                  {staffList.map((staff) => (
+                  {availableMechanics.map((staff) => (
                     <SelectItem key={staff.id} value={staff.id}>
                       {staff.name} ({staff.email})
                     </SelectItem>
                   ))}
                   {/* If current assigned mechanic is not in the filtered available list, show them as an option too for context */}
-                  {currentAssignedStaffId && !staffList.find(s => s.id === currentAssignedStaffId) && 
+                  {currentAssignedStaffId && !availableMechanics.find(s => s.id === currentAssignedStaffId) && 
                     (() => {
-                        const currentMechanic = getStaffMembersFromStorage().find(s => s.id === currentAssignedStaffId);
+                        // Look up in allMechanics list
+                        const currentMechanic = allMechanics.find(s => s.id === currentAssignedStaffId);
                         return currentMechanic ? (
                             <SelectItem key={currentMechanic.id} value={currentMechanic.id} disabled>
                                 {currentMechanic.name} (Currently Assigned, Occupied)
@@ -112,7 +115,7 @@ const AssignStaffDialog: React.FC<AssignStaffDialogProps> = ({
           <DialogClose asChild>
             <Button type="button" variant="outline">Cancel</Button>
           </DialogClose>
-          <Button type="button" onClick={handleSave} disabled={staffList.length === 0 && !selectedStaffId && !currentAssignedStaffId}>
+          <Button type="button" onClick={handleSave} disabled={availableMechanics.length === 0 && !selectedStaffId && !currentAssignedStaffId}>
             Confirm Assignment
           </Button>
         </DialogFooter>
