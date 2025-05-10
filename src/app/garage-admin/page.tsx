@@ -24,9 +24,9 @@ import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
 import AssignStaffDialog from '@/components/garage/AssignStaffDialog';
 
-import { listenToRequests, updateServiceRequest } from '@/services/requestService';
-import { listenToStaffMembers, getAllStaffMembers } from '@/services/staffService'; // Using listenToStaffMembers for real-time
-import { listenToGarages, getAllGarages } from '@/services/garageService'; // Using listenToGarages for real-time
+import { listenToRequests, updateServiceRequest, getAllRequests } from '@/services/requestService';
+import { listenToStaffMembers, getAllStaffMembers } from '@/services/staffService'; 
+import { listenToGarages, getAllGarages } from '@/services/garageService'; 
 
 
 const DEFAULT_VEHICLE_INFO: VehicleInfo = { make: 'Unknown', model: 'Unknown', year: 'N/A', licensePlate: 'N/A' };
@@ -50,39 +50,47 @@ export default function GarageAdminPage() {
   const loadInitialData = useCallback(async () => {
     setIsLoadingData(true);
     try {
-      // Fetch initial data once, then rely on listeners
-      const initialRequests = await getAllRequests(); // from requestService
+      const initialRequests = await getAllRequests(); 
       const processedRequests = initialRequests.map(r => ({
           ...r,
           vehicleInfo: r.vehicleInfo || DEFAULT_VEHICLE_INFO,
-      })).sort((a, b) => b.requestTime.getTime() - a.requestTime.getTime());
+      })).sort((a, b) => (new Date(b.requestTime)).getTime() - (new Date(a.requestTime)).getTime());
       setRequests(processedRequests);
 
-      const initialGarages = await getAllGarages(); // from garageService
+      const initialGarages = await getAllGarages();
       setGarageProviders(initialGarages);
 
       if (role === 'admin' || role === 'mechanic' || role === 'customer_relations') { 
-        const initialStaff = await getAllStaffMembers(); // from staffService
+        const initialStaff = await getAllStaffMembers(); 
         setStaffMembers(initialStaff);
       }
-       if (initialLoadRef.current && initialRequests) {
+
+      if (initialLoadRef.current) {
+        toast({
+          title: "Database Connected",
+          description: "Successfully fetched initial records.",
+          variant: "default",
+          duration: 4000,
+        });
         const currentPendingCount = initialRequests.filter(req => req.status === 'Pending').length;
         prevPendingCountRef.current = currentPendingCount;
-        initialLoadRef.current = false;
+        initialLoadRef.current = false; // Mark initial load as complete
       }
     } catch (error) {
       console.error("Error loading initial data:", error);
       toast({ title: "Error Loading Data", description: "Could not fetch initial records from the database.", variant: "destructive" });
+      if (initialLoadRef.current) {
+        initialLoadRef.current = false; // Also mark as complete on error to prevent re-runs
+      }
     } finally {
       setIsLoadingData(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [role, toast]); // loadInitialData doesn't need to change frequently based on these
+  }, [role, toast]); 
 
  useEffect(() => {
     if (!authLoading && !user) {
       router.push('/login?redirect=/garage-admin');
-    } else if (user && initialLoadRef.current) { // Only call loadInitialData once after user is available
+    } else if (user && initialLoadRef.current) { 
       loadInitialData();
     }
   }, [authLoading, user, router, loadInitialData]);
@@ -90,14 +98,15 @@ export default function GarageAdminPage() {
 
   // Listener for service requests
   useEffect(() => {
-    if (!user) return; // Don't listen if no user
+    if (!user) return; 
     const unsubscribeRequests = listenToRequests((updatedRequests) => {
       const processedRequests = updatedRequests.map(r => ({
         ...r,
         vehicleInfo: r.vehicleInfo || DEFAULT_VEHICLE_INFO,
-      })).sort((a, b) => b.requestTime.getTime() - a.requestTime.getTime());
+      })).sort((a, b) => (new Date(b.requestTime)).getTime() - (new Date(a.requestTime)).getTime());
       
       const currentPendingCount = processedRequests.filter(req => req.status === 'Pending').length;
+      // Only show toast if initialLoadRef is false (meaning initial data has been processed)
       if (!initialLoadRef.current && currentPendingCount > prevPendingCountRef.current) {
          toast({
             title: "🔔 New Pending Request(s)!",
@@ -114,10 +123,10 @@ export default function GarageAdminPage() {
       }
       prevPendingCountRef.current = currentPendingCount;
       setRequests(processedRequests);
-      if (isLoadingData) setIsLoadingData(false); // Mark as not loading once first data arrives
+      if (isLoadingData && !initialLoadRef.current) setIsLoadingData(false); 
     });
     return () => unsubscribeRequests();
-  }, [user, toast, isLoadingData]); // Added isLoadingData
+  }, [user, toast, isLoadingData]); 
 
   // Listener for staff members
   useEffect(() => {
@@ -148,7 +157,6 @@ export default function GarageAdminPage() {
 
       if (role === 'admin' && newStatus === 'Accepted' && !currentRequest.assignedStaffId) {
         requestNeedsAssignment = true;
-        // Find the updated request from state after Firestore listener updates it, or use currentRequest
         const potentiallyUpdatedRequest = requests.find(req => req.id === requestId) || { ...currentRequest, status: newStatus };
         setRequestToAssign(potentiallyUpdatedRequest); 
       }
@@ -204,13 +212,14 @@ export default function GarageAdminPage() {
   const occupiedMechanicIds = new Set(requestsInProgress.map(req => req.assignedStaffId).filter(id => !!id));
   const assignableMechanics = allMechanics.filter(mech => !occupiedMechanicIds.has(mech.id));
 
-  const refreshData = () => { // This might be less necessary with real-time listeners
+  const refreshData = () => { 
+    initialLoadRef.current = true; // Allow loadInitialData to run its full initial logic including success toast
     loadInitialData(); 
     setSelectedGarage('all');
     setSelectedStatus('all');
     toast({
-      title: "Data Reloaded",
-      description: "Attempted to reload all data from the database.",
+      title: "Data Refresh Initiated",
+      description: "Attempting to reload all data from the database.",
       duration: 3000
     });
   }
@@ -287,21 +296,21 @@ export default function GarageAdminPage() {
       </Card>
 
       <Tabs defaultValue="requests" className="w-full">
-        <TabsList className="flex items-stretch justify-center sm:justify-start max-w-md mx-auto w-full sm:space-x-1 sm:h-10">
-          <TabsTrigger value="requests" className="flex flex-1 items-center justify-center p-2 sm:flex-none sm:w-auto sm:px-3 sm:py-1.5">
-            <ClipboardList className="h-5 w-5 sm:mr-2" />
-            <span className="hidden sm:inline">Service Requests</span>
+        <TabsList className="flex flex-col h-auto sm:flex-row sm:h-10 items-stretch justify-center sm:justify-start max-w-md mx-auto w-full sm:space-x-1">
+          <TabsTrigger value="requests" className="flex flex-1 items-center justify-center p-2 text-xs sm:text-sm sm:flex-none sm:w-auto sm:px-3 sm:py-1.5">
+            <ClipboardList className="h-4 w-4 sm:h-5 sm:w-5 sm:mr-2" />
+            <span className="sm:inline">Service Requests</span>
           </TabsTrigger>
           {role === 'admin' && (
-            <TabsTrigger value="staff" className="flex flex-1 items-center justify-center p-2 sm:flex-none sm:w-auto sm:px-3 sm:py-1.5">
-              <Users className="h-5 w-5 sm:mr-2" />
-              <span className="hidden sm:inline">Staff</span>
+            <TabsTrigger value="staff" className="flex flex-1 items-center justify-center p-2 text-xs sm:text-sm sm:flex-none sm:w-auto sm:px-3 sm:py-1.5">
+              <Users className="h-4 w-4 sm:h-5 sm:w-5 sm:mr-2" />
+              <span className="sm:inline">Staff</span>
             </TabsTrigger>
           )}
           {role === 'admin' && (
-            <TabsTrigger value="garages" className="flex flex-1 items-center justify-center p-2 sm:flex-none sm:w-auto sm:px-3 sm:py-1.5">
-              <Building className="h-5 w-5 sm:mr-2" />
-              <span className="hidden sm:inline">Garages</span>
+            <TabsTrigger value="garages" className="flex flex-1 items-center justify-center p-2 text-xs sm:text-sm sm:flex-none sm:w-auto sm:px-3 sm:py-1.5">
+              <Building className="h-4 w-4 sm:h-5 sm:w-5 sm:mr-2" />
+              <span className="sm:inline">Garages</span>
             </TabsTrigger>
           )}
         </TabsList>
@@ -346,7 +355,7 @@ export default function GarageAdminPage() {
                 Displaying {visibleRequests.length} of {requests.length} total requests. 
                 ({pendingRequestCount} pending)
               </p>
-               {isLoadingData && initialLoadRef.current ? ( // Show main loading only on initial load
+               {isLoadingData && initialLoadRef.current ? ( 
                 <div className="flex items-center justify-center py-6">
                   <Loader2 className="h-8 w-8 animate-spin text-primary" />
                   <p className="ml-3">Loading requests...</p>
@@ -356,8 +365,8 @@ export default function GarageAdminPage() {
                  <RequestList 
                     requests={visibleRequests} 
                     onStatusChange={handleStatusChange} 
-                    onAssignStaff={role === 'admin' ? handleAssignStaff : undefined}
-                    staffList={staffMembers} // Pass all staff for display
+                    onAssignStaff={(role === 'admin' && onAssignStaff) ? handleAssignStaff : undefined}
+                    staffList={staffMembers} 
                     assignableStaffList={assignableMechanics} 
                     currentUserRole={role}
                     currentUserId={user?.uid} 
@@ -386,11 +395,12 @@ export default function GarageAdminPage() {
           onClose={() => setRequestToAssign(null)}
           requestId={requestToAssign.id}
           currentAssignedStaffId={requestToAssign.assignedStaffId}
-          allMechanics={allMechanics} // Pass all mechanics for potential name lookup
-          availableMechanics={assignableMechanics} // Pass available for selection
+          allMechanics={allMechanics} 
+          availableMechanics={assignableMechanics}
           onAssignStaff={handleAssignStaff}
         />
       )}
     </div>
   );
 }
+

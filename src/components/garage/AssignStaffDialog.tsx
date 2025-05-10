@@ -30,8 +30,8 @@ interface AssignStaffDialogProps {
   onClose: () => void;
   requestId: string;
   currentAssignedStaffId?: string | null;
-  availableMechanics: StaffMember[]; // This list should be pre-filtered to *assignable* mechanics by the parent
-  allMechanics: StaffMember[]; // Full list of all mechanics for looking up names
+  availableMechanics: StaffMember[]; 
+  allMechanics: StaffMember[]; 
   onAssignStaff: (requestId: string, staffId: string | null) => void;
 }
 
@@ -94,10 +94,8 @@ const AssignStaffDialog: React.FC<AssignStaffDialogProps> = ({
                       {staff.name} ({staff.email})
                     </SelectItem>
                   ))}
-                  {/* If current assigned mechanic is not in the filtered available list, show them as an option too for context */}
                   {currentAssignedStaffId && !availableMechanics.find(s => s.id === currentAssignedStaffId) && 
                     (() => {
-                        // Look up in allMechanics list
                         const currentMechanic = allMechanics.find(s => s.id === currentAssignedStaffId);
                         return currentMechanic ? (
                             <SelectItem key={currentMechanic.id} value={currentMechanic.id} disabled>
@@ -115,7 +113,16 @@ const AssignStaffDialog: React.FC<AssignStaffDialogProps> = ({
           <DialogClose asChild>
             <Button type="button" variant="outline">Cancel</Button>
           </DialogClose>
-          <Button type="button" onClick={handleSave} disabled={availableMechanics.length === 0 && !selectedStaffId && !currentAssignedStaffId}>
+          <Button 
+            type="button" 
+            onClick={handleSave} 
+            // Disable save if:
+            // 1. No mechanics are available AND
+            // 2. No one is currently selected (selectedStaffId is null) AND
+            // 3. No one was previously assigned (currentAssignedStaffId is null)
+            // This allows unassigning even if no one is available.
+            disabled={availableMechanics.length === 0 && !selectedStaffId && !currentAssignedStaffId}
+          >
             Confirm Assignment
           </Button>
         </DialogFooter>
@@ -125,3 +132,4 @@ const AssignStaffDialog: React.FC<AssignStaffDialogProps> = ({
 };
 
 export default AssignStaffDialog;
+

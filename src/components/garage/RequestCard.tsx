@@ -1,3 +1,4 @@
+
 // src/components/garage/RequestCard.tsx
 "use client";
 
@@ -22,7 +23,7 @@ interface RequestCardProps {
   request: ServiceRequest;
   onStatusChange: (requestId: string, newStatus: ServiceRequest['status'], mechanicNotes?: string, resourcesUsed?: string) => void;
   onAssignStaff?: (requestId: string, staffId: string | null) => void; 
-  staffList: StaffMember[]; // Full list of mechanics for display purposes
+  staffList: StaffMember[]; // Full list of all staff for display purposes (including non-mechanics if any)
   assignableStaffList: StaffMember[]; // Filtered list of available mechanics for assignment
   currentUserRole: UserRole;
   currentUserId?: string; 
@@ -49,19 +50,19 @@ const RequestCard: FC<RequestCardProps> = ({
     request, 
     onStatusChange, 
     onAssignStaff, 
-    staffList, 
-    assignableStaffList,
+    staffList, // This is the full list of staff members from admin page
+    assignableStaffList, // This is the pre-filtered list of *assignable* mechanics
     currentUserRole,
     currentUserEmail
 }) => {
   const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false);
   const [isLogDetailsDialogOpen, setIsLogDetailsDialogOpen] = useState(false);
-  // targetStatusOnSubmitForLogging will be 'Completed' if completing, or current status if just logging.
   const [targetStatusOnSubmitForLogging, setTargetStatusOnSubmitForLogging] = useState<ServiceRequest['status']>(request.status);
 
 
   const StatusIcon = statusIcons[request.status];
-  const assignedMechanic = staffList.find(staff => staff.id === request.assignedStaffId);
+  // Use staffList (all staff) to find the assigned mechanic for display purposes
+  const assignedMechanic = staffList.find(staff => staff.id === request.assignedStaffId && staff.role === 'mechanic');
 
   const currentMechanicStaffProfile = staffList.find(s => s.email.toLowerCase() === currentUserEmail?.toLowerCase() && s.role === 'mechanic');
   const isCurrentUserAssignedMechanic = !!currentMechanicStaffProfile && request.assignedStaffId === currentMechanicStaffProfile.id;
@@ -69,16 +70,14 @@ const RequestCard: FC<RequestCardProps> = ({
   const handleLocalStatusChange = (newStatus: ServiceRequest['status']) => {
     if (currentUserRole === 'admin') {
       if (newStatus === 'Accepted' && !request.assignedStaffId && onAssignStaff) {
-        // Admin sets to Accepted, no mechanic yet -> trigger assignment in parent or here
-        // Parent (GarageAdminPage) handles this by setting requestToAssign
-        onStatusChange(request.id, newStatus); // Update status, parent will pop dialog
+        onStatusChange(request.id, newStatus); 
       } else {
         onStatusChange(request.id, newStatus);
       }
     } else if (currentUserRole === 'mechanic' && isCurrentUserAssignedMechanic) {
       if (newStatus === 'Completed') {
         setTargetStatusOnSubmitForLogging('Completed');
-        setIsLogDetailsDialogOpen(true); // Must log details to complete
+        setIsLogDetailsDialogOpen(true); 
       } else if ((request.status === 'Accepted' && (newStatus === 'In Progress' || newStatus === 'Cancelled')) ||
                  (request.status === 'In Progress' && newStatus === 'Cancelled')) {
         onStatusChange(request.id, newStatus);
@@ -92,12 +91,14 @@ const RequestCard: FC<RequestCardProps> = ({
   };
 
   const handleOpenLogDetailsDialog = () => {
-    setTargetStatusOnSubmitForLogging(request.status); // Logging for current status
+    setTargetStatusOnSubmitForLogging(request.status); 
     setIsLogDetailsDialogOpen(true);
   };
 
   const canAdminAssign = currentUserRole === 'admin' && onAssignStaff && request.status !== 'Completed' && request.status !== 'Cancelled';
   
+  const allMechanicsFromStaffList = staffList.filter(s => s.role === 'mechanic');
+
   const availableStatusesForSelect: ServiceRequest['status'][] = 
     currentUserRole === 'admin' 
     ? ['Pending', 'Accepted', 'In Progress', 'Completed', 'Cancelled']
@@ -219,21 +220,20 @@ const RequestCard: FC<RequestCardProps> = ({
         </CardFooter>
       </Card>
 
-      {/* Dialog for admin to assign staff */}
       {canAdminAssign && (
         <AssignStaffDialog
           isOpen={isAssignDialogOpen}
           onClose={() => setIsAssignDialogOpen(false)}
           requestId={request.id}
           currentAssignedStaffId={request.assignedStaffId}
-          staffList={assignableStaffList} // Use assignable (available) staff
+          availableMechanics={assignableStaffList} 
+          allMechanics={allMechanicsFromStaffList} // Pass all mechanics for name lookup
           onAssignStaff={(reqId, staffId) => {
             if(onAssignStaff) onAssignStaff(reqId, staffId);
             setIsAssignDialogOpen(false);
           }}
         />
       )}
-      {/* Dialog for mechanic to log details */}
       {(currentUserRole === 'mechanic' && isCurrentUserAssignedMechanic && (request.status === 'Accepted' || request.status === 'In Progress' || isLogDetailsDialogOpen && targetStatusOnSubmitForLogging === 'Completed')) && (
          <LogMechanicDetailsDialog
             isOpen={isLogDetailsDialogOpen}
@@ -248,3 +248,4 @@ const RequestCard: FC<RequestCardProps> = ({
 };
 
 export default RequestCard;
+
