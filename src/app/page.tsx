@@ -12,11 +12,12 @@ import VehicleInfoForm from '@/components/VehicleInfoForm';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { CheckCircle, MessageSquareHeart, Car, Clock, Loader2, ArrowLeft, Home, RefreshCw, LogIn, AlertCircle as AlertCircleIcon, Send, Ban } from 'lucide-react';
+import { CheckCircle, MessageSquareHeart, Car, Clock, Loader2, ArrowLeft, Home, RefreshCw, LogIn, AlertCircle as AlertCircleIcon, Send, Ban, Settings } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
-import { getRequestsFromStorage, saveRequestsToStorage, LOCAL_STORAGE_REQUESTS_KEY } from '@/lib/localStorageUtils';
+import { getRequestsFromStorage, saveRequestsToStorage } from '@/lib/localStorageUtils';
+import Link from 'next/link';
 
 type AppStep = 'initial' | 'details' | 'providers' | 'tracking' | 'completed';
 
@@ -95,9 +96,9 @@ export default function RoadsideRescuePage() {
     
     if (userLocation && user && vehicleInfo) { 
       const newRequest: ServiceRequestType = {
-        id: `req-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`, // More unique ID
+        id: `req-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`, 
         requestId: `RR-${Math.random().toString(36).substring(2, 7).toUpperCase()}`,
-        userId: user.uid, // Store the user's Firebase UID
+        userId: user.uid, 
         userLocation: userLocation,
         issueDescription: issueDescription,
         issueSummary: confirmedIssueSummary,
@@ -153,10 +154,11 @@ export default function RoadsideRescuePage() {
     } else if (user) {
       if (role === 'admin') {
         toast({
-          title: "Admin Restriction",
-          description: "Administrators cannot make service requests.",
+          title: "Admin Account",
+          description: "Administrators cannot make service requests. Redirecting to Garage Admin.",
           variant: "default",
         });
+        router.push('/garage-admin'); // Redirect admin to their portal
         return;
       }
       setCurrentStep('details');
@@ -193,9 +195,7 @@ export default function RoadsideRescuePage() {
         }
 
         if (simulatedTravelTimeRemaining <= 0 && !hasProviderArrivedSimulation) {
-          // No longer clearing interval here immediately, wait for status update to 'Completed' or manual step change
           setHasProviderArrivedSimulation(true); 
-          // Don't automatically go to 'completed', wait for status update from garage or if garage sets to completed
           if (selectedProvider) { 
             toast({
               title: "Provider should be Arriving!",
@@ -206,7 +206,6 @@ export default function RoadsideRescuePage() {
         }
       }, 2000);
 
-      // Poll for status updates
       statusPollInterval = setInterval(() => {
         const allRequests = getRequestsFromStorage();
         const updatedRequest = allRequests.find(req => req.id === serviceRequest.id);
@@ -215,24 +214,24 @@ export default function RoadsideRescuePage() {
             title: "Request Status Updated",
             description: `Your request status is now: ${updatedRequest.status}`,
           });
-          setServiceRequest(updatedRequest); // Update local service request state
+          setServiceRequest(updatedRequest); 
           if (updatedRequest.status === 'Completed' || updatedRequest.status === 'Cancelled') {
             setCurrentStep('completed');
-            clearInterval(trackingInterval); // Stop simulation if completed/cancelled
-            clearInterval(statusPollInterval); // Stop polling
+            clearInterval(trackingInterval); 
+            clearInterval(statusPollInterval); 
           }
         }
-      }, 5000); // Poll every 5 seconds
+      }, 5000); 
     }
     return () => {
       clearInterval(trackingInterval);
       clearInterval(statusPollInterval);
     };
-  // providerCurrentLocation removed as it causes re-runs. ServiceRequest added for status polling.
   }, [currentStep, selectedProvider, userLocation, providerETA, toast, serviceRequest, hasProviderArrivedSimulation]); 
 
 
   const allDetailsProvided = isLocationConfirmed && isIssueConfirmed && isVehicleInfoConfirmed;
+  const isAdminUser = user && role === 'admin';
 
   const renderStepContent = () => {
     if (authLoading && currentStep === 'initial') {
@@ -254,48 +253,64 @@ export default function RoadsideRescuePage() {
               </div>
               <CardTitle className="text-3xl font-bold">Emergency?</CardTitle>
               <CardDescription className="text-lg text-muted-foreground">
-                Don't worry, help is just a few taps away. Let's get you back on the road with ResQ.
+                {isAdminUser 
+                  ? "Welcome, Admin. Access the Garage Management portal." 
+                  : "Don't worry, help is just a few taps away. Let's get you back on the road with ResQ."
+                }
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <p className="mb-6">We'll quickly find nearby assistance for your issue.</p>
+              <p className="mb-6">
+                {isAdminUser 
+                  ? "Manage service requests, staff, and garage branches from the admin panel." 
+                  : "We'll quickly find nearby assistance for your issue."
+                }
+              </p>
                {!isFirebaseReady && !authLoading && (
                 <Alert variant="destructive" className="mb-4">
                   <AlertCircleIcon className="h-4 w-4" />
                   <AlertTitle>Authentication Service Unavailable</AlertTitle>
                   <AlertDescription>
-                    Cannot proceed with request. Please try again later.
+                    Cannot proceed. Please try again later.
                   </AlertDescription>
                 </Alert>
               )}
             </CardContent>
             <CardFooter>
-              <Button 
-                size="lg" 
-                className="w-full text-lg py-7 bg-accent hover:bg-accent/90 text-accent-foreground" 
-                onClick={handleInitialAction}
-                disabled={authLoading || !isFirebaseReady || (user && role === 'admin')}
-              >
-                {authLoading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : 
-                  !user ? <><LogIn className="mr-2 h-5 w-5" /> Login to Request</> : 
-                  role === 'admin' ? <><Ban className="mr-2 h-5 w-5" /> Admin Cannot Request</> : 
-                  "Request Assistance Now"
-                }
-              </Button>
+              {isAdminUser ? (
+                <Button asChild size="lg" className="w-full text-lg py-7 bg-primary hover:bg-primary/90 text-primary-foreground">
+                  <Link href="/garage-admin">
+                    <Settings className="mr-2 h-5 w-5" /> Go to Admin Portal
+                  </Link>
+                </Button>
+              ) : (
+                <Button 
+                  size="lg" 
+                  className="w-full text-lg py-7 bg-accent hover:bg-accent/90 text-accent-foreground" 
+                  onClick={handleInitialAction}
+                  disabled={authLoading || !isFirebaseReady}
+                >
+                  {authLoading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : 
+                    !user ? <><LogIn className="mr-2 h-5 w-5" /> Login to Request</> : 
+                    "Request Assistance Now"
+                  }
+                </Button>
+              )}
             </CardFooter>
           </Card>
         );
       case 'details':
-        if (!user && isFirebaseReady) { 
+        if (!user && isFirebaseReady && !authLoading) { 
           router.push('/login?redirect=/');
           return <div className="flex-grow flex items-center justify-center"><Loader2 className="h-12 w-12 animate-spin text-primary" /><p className="ml-3">Redirecting to login...</p></div>;
         }
-        if (role === 'admin' && user) { // Double check admin restriction here too
-            toast({ title: "Admin Restriction", description: "Administrators cannot make service requests.", variant: "default"});
-            resetApp(); // Go back to initial step
-            return null; // Or a message component
+        if (isAdminUser) { // Should not reach here if initial step logic is correct, but as a safeguard
+            toast({ title: "Admin Account", description: "Admins cannot make requests. Redirecting.", variant: "default"});
+            router.push('/garage-admin');
+            resetApp(); 
+            return <div className="flex-grow flex items-center justify-center"><Loader2 className="h-12 w-12 animate-spin text-primary" /><p className="ml-3">Redirecting Admin...</p></div>;
         }
-        if (!isFirebaseReady && !authLoading) { // Check authLoading here too
+        if (!isFirebaseReady && !authLoading) { 
              return (
                 <Alert variant="destructive" className="w-full max-w-md">
                     <AlertCircleIcon className="h-4 w-4" />

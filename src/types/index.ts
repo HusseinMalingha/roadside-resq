@@ -8,11 +8,12 @@ export interface ServiceProvider {
   id: string;
   name: string;
   phone: string;
-  etaMinutes: number;
-  currentLocation: Location;
+  etaMinutes: number; // Can be a default or manually set for new garages
+  currentLocation: Location; // lat, lng
   generalLocation: string; // e.g., "Kampala Central", "Ntinda", "Entebbe Town"
   servicesOffered: string[];
   distanceKm?: number; // Optional, calculated dynamically
+  isCustom?: boolean; // Optional: to distinguish seeded from admin-added
 }
 
 export interface VehicleInfo {
@@ -58,3 +59,4 @@ export interface UserProfile {
   phoneNumber?: string | null;
   // Add any other custom fields you might store
 }
+

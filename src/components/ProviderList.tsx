@@ -10,136 +10,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { SearchX, Loader2, ListFilter, MapPinned } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-
-// Mock data for Auto Xpress garages in Uganda
-const MOCK_PROVIDERS: ServiceProvider[] = [
-  // Kampala Area
-  { 
-    id: 'ax-kampala-central', 
-    name: 'Auto Xpress - Kampala Central', 
-    phone: '(256) 772-123456', 
-    etaMinutes: 15, 
-    currentLocation: { lat: 0.3136, lng: 32.5811 }, 
-    generalLocation: "Kampala Central (City Oil Kira Rd)",
-    servicesOffered: ['Tire Services', 'Battery Replacement', 'Oil Change', 'Brake Services', 'Flat tire', 'Dead battery', 'Vehicle Diagnostics'] 
-  },
-  { 
-    id: 'ax-lugogo', 
-    name: 'Auto Xpress - Lugogo', 
-    phone: '(256) 772-234567', 
-    etaMinutes: 20, 
-    currentLocation: { lat: 0.3270, lng: 32.5990 }, // Adjusted approx location for Lugogo Bypass U-Save
-    generalLocation: "Lugogo (U-Save, Next to Forest Mall)",
-    servicesOffered: ['Suspension Work', 'Diagnostics', 'Tire Alignment', 'Jump Start', 'Engine failure', 'Car Wash'] 
-  },
-  { 
-    id: 'ax-ntinda', 
-    name: 'Auto Xpress - Ntinda', 
-    phone: '(256) 772-345678', 
-    etaMinutes: 25, 
-    currentLocation: { lat: 0.3450, lng: 32.6120 }, // Ntinda Strecher Road
-    generalLocation: "Ntinda (Strecher Road)",
-    servicesOffered: ['Fuel Delivery (Emergency)', 'Battery Testing', 'Tire Puncture Repair', 'Minor Mechanical Repairs', 'Lockout', 'Fuel delivery'] 
-  },
-  { 
-    id: 'ax-acacia', 
-    name: 'Auto Xpress - Acacia Mall', 
-    phone: '(256) 772-456789', 
-    etaMinutes: 18, 
-    currentLocation: { lat: 0.3312, lng: 32.5900 }, // Acacia Mall Basement Parking
-    generalLocation: "Kololo (Acacia Mall)",
-    servicesOffered: ['Tire Sales & Fitting', 'Oil and Filter Change', 'Wiper Blade Replacement', 'Lockout Assistance (Limited)', 'Car Accessories'] 
-  },
-  { 
-    id: 'ax-nakawa', 
-    name: 'Auto Xpress - Nakawa', 
-    phone: '(256) 772-678901', 
-    etaMinutes: 22, 
-    currentLocation: { lat: 0.3300, lng: 32.6150 }, // Shell Nakawa
-    generalLocation: "Nakawa (Shell Select)",
-    servicesOffered: ['Full Service Maintenance', 'Tire Balancing', 'Air Conditioning Recharge', 'Diagnostics', 'Engine failure', 'Wheel Alignment'] 
-  },
-  {
-    id: 'ax-garden-city',
-    name: 'Auto Xpress - Garden City',
-    phone: '(256) 772-000111',
-    etaMinutes: 12,
-    currentLocation: { lat: 0.3178, lng: 32.5860 }, // Garden City Mall Basement
-    generalLocation: "Kampala Central (Garden City Mall)",
-    servicesOffered: ['Tire Services', 'Battery Check & Replacement', 'Oil Top-up', 'Wiper Blades']
-  },
-  {
-    id: 'ax-village-mall',
-    name: 'Auto Xpress - Village Mall',
-    phone: '(256) 773-222333',
-    etaMinutes: 28,
-    currentLocation: { lat: 0.3500, lng: 32.6090 }, // Bugolobi, Village Mall
-    generalLocation: "Bugolobi (Village Mall)",
-    servicesOffered: ['Tire Sales', 'Battery Sales', 'Oil Change Services', 'Car Accessories']
-  },
-  {
-    id: 'ax-metroplex-nalya',
-    name: 'Auto Xpress - Metroplex Naalya',
-    phone: '(256) 774-555666',
-    etaMinutes: 35,
-    currentLocation: { lat: 0.3670, lng: 32.6330 }, // Naalya, Metroplex Mall
-    generalLocation: "Naalya (Metroplex Mall)",
-    servicesOffered: ['Tire Fitting & Balancing', 'Battery Services', 'Oil Change', 'Car Care Products']
-  },
-  
-  // Entebbe Area
-  { 
-    id: 'ax-entebbe-victoria-mall', 
-    name: 'Auto Xpress - Victoria Mall Entebbe', 
-    phone: '(256) 772-567890', 
-    etaMinutes: 45, 
-    currentLocation: { lat: 0.0530, lng: 32.4640 }, // Victoria Mall, Entebbe
-    generalLocation: "Entebbe (Victoria Mall)",
-    servicesOffered: ['Battery Jump Start', 'Tire Inflation & Repair', 'Fluid Top-up', 'Brake Pad Replacement', 'Flat tire', 'Oil Change'] 
-  },
-  { 
-    id: 'ax-entebbe-shell', 
-    name: 'Auto Xpress - Shell Entebbe Rd', 
-    phone: '(256) 775-101010', 
-    etaMinutes: 40, 
-    currentLocation: { lat: 0.0650, lng: 32.4750 }, // Shell on main Entebbe Road
-    generalLocation: "Entebbe Road (Shell)",
-    servicesOffered: ['Tire Services', 'Battery Replacement', 'Oil Change', 'Quick Diagnostics'] 
-  },
-
-  // Mukono Area
-   { 
-    id: 'ax-mukono-sombe', 
-    name: 'Auto Xpress - Mukono Sombe', 
-    phone: '(256) 773-112233', 
-    etaMinutes: 55, 
-    currentLocation: { lat: 0.3550, lng: 32.7500 }, // Sombe Supermarket Mukono
-    generalLocation: "Mukono Town (Sombe Supermarket)",
-    servicesOffered: ['Tire Services', 'Battery Replacement', 'Minor Mechanical Repairs', 'Jump Start', 'Oil Change'] 
-  },
-
-  // Jinja Area
-  { 
-    id: 'ax-jinja-main-street', 
-    name: 'Auto Xpress - Jinja Main Street', 
-    phone: '(256) 774-445566', 
-    etaMinutes: 90, 
-    currentLocation: { lat: 0.4320, lng: 33.2030 }, // Main Street, Jinja
-    generalLocation: "Jinja City (Main Street)",
-    servicesOffered: ['Full Service Maintenance', 'Diagnostics', 'Tire Alignment', 'Brake Services', 'Suspension Checks'] 
-  },
-  // Other towns (Mbarara, Gulu - if AutoXpress expands there)
-  {
-    id: 'ax-mbarara-high-street',
-    name: 'Auto Xpress - Mbarara High Street',
-    phone: '(256) 776-777888',
-    etaMinutes: 180, // Approx from Kampala
-    currentLocation: { lat: -0.6070, lng: 30.6570 },
-    generalLocation: "Mbarara (High Street)",
-    servicesOffered: ['Tire Services', 'Battery Solutions', 'Oil Change', 'Basic Maintenance']
-  }
-];
-
+import { getGaragesFromStorage } from '@/lib/localStorageUtils'; // Import the new getter
 
 interface ProviderListProps {
   userLocation: UserLocationType | null;
@@ -161,58 +32,63 @@ function calculateDistance(loc1: UserLocationType, loc2: UserLocationType): numb
 
 const ProviderList: FC<ProviderListProps> = ({ userLocation, issueType, onSelectProvider }) => {
   const [isLoading, setIsLoading] = useState(true);
+  const [allProviders, setAllProviders] = useState<ServiceProvider[]>([]);
   const [displayedProviders, setDisplayedProviders] = useState<ServiceProvider[]>([]);
   const [noSpecificMatch, setNoSpecificMatch] = useState(false);
 
   useEffect(() => {
+    // Load garages from local storage on component mount
+    const garages = getGaragesFromStorage();
+    setAllProviders(garages);
+  }, []);
+
+  useEffect(() => {
+    if (allProviders.length === 0 && !isLoading) return; // Don't process if no providers loaded yet or still loading initial set
+
     setIsLoading(true);
     setNoSpecificMatch(false);
     
-    // Simulate API call or data fetching
+    // Simulate API call or data fetching - replaced with direct processing
     setTimeout(() => {
-      let primaryFilteredProviders = MOCK_PROVIDERS;
+      let primaryFilteredProviders = [...allProviders]; // Use a copy of the state
       
       // Filter by service if issueType is provided
       if (issueType && issueType.trim() !== "") {
         const lowerIssueType = issueType.toLowerCase();
-        primaryFilteredProviders = MOCK_PROVIDERS.filter(p => 
+        primaryFilteredProviders = allProviders.filter(p => 
           p.servicesOffered.some(service => 
             service.toLowerCase().includes(lowerIssueType) || 
-            lowerIssueType.includes(service.toLowerCase()) // Also check if query is part of a service
+            lowerIssueType.includes(service.toLowerCase()) 
           )
         );
       }
       
-      // Calculate distances and sort if userLocation is available
       if (userLocation) {
         primaryFilteredProviders = primaryFilteredProviders.map(p => ({
           ...p,
           distanceKm: calculateDistance(userLocation, p.currentLocation)
         })).sort((a,b) => (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity));
       } else {
-         // If no location, sort by ETA or name as a fallback
          primaryFilteredProviders = primaryFilteredProviders.map(p => ({ ...p, distanceKm: undefined })).sort((a,b) => a.etaMinutes - b.etaMinutes);
       }
 
       if (primaryFilteredProviders.length > 0) {
         setDisplayedProviders(primaryFilteredProviders);
       } else {
-        // No providers match the specific issue type
         setNoSpecificMatch(true);
-        // Fallback: show all providers, sorted by distance (if location available) or ETA
-        let fallbackProviders = MOCK_PROVIDERS.map(p => userLocation ? ({...p, distanceKm: calculateDistance(userLocation, p.currentLocation)}) : ({...p, distanceKm: undefined}));
+        let fallbackProviders = [...allProviders].map(p => userLocation ? ({...p, distanceKm: calculateDistance(userLocation, p.currentLocation)}) : ({...p, distanceKm: undefined}));
         if (userLocation) {
             fallbackProviders.sort((a,b) => (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity));
         } else {
-            fallbackProviders.sort((a,b) => a.etaMinutes - b.etaMinutes); // Default sort by ETA if no location
+            fallbackProviders.sort((a,b) => a.etaMinutes - b.etaMinutes);
         }
         setDisplayedProviders(fallbackProviders);
       }
       setIsLoading(false);
-    }, 1500); // Simulate network delay
-  }, [userLocation, issueType]);
+    }, 500); // Shorter delay as data is local
+  }, [userLocation, issueType, allProviders, isLoading]); // Add isLoading to dependency array to re-trigger when allProviders is first set.
 
-  if (isLoading) {
+  if (isLoading && displayedProviders.length === 0) { // Show loading only if there's nothing to display yet
     return (
       <div className="flex flex-col items-center justify-center p-10 text-muted-foreground w-full flex-grow">
         <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
@@ -246,13 +122,13 @@ const ProviderList: FC<ProviderListProps> = ({ userLocation, issueType, onSelect
         )}
       </CardHeader>
       <CardContent className="flex-grow flex flex-col min-h-0">
-        {displayedProviders.length === 0 && !noSpecificMatch ? (
+        {displayedProviders.length === 0 && !noSpecificMatch && !isLoading ? ( // Added !isLoading here
             <Alert variant="default" className="mt-4">
               <SearchX className="h-5 w-5" />
               <AlertTitle className="font-semibold">No Auto Xpress Garages Found</AlertTitle>
               <AlertDescription>
                 Unfortunately, we couldn't find any Auto Xpress garages at this time matching your criteria. 
-                Please try broadening your search or check back later.
+                Please try broadening your search or check back later. Admins can add more garages in the portal.
               </AlertDescription>
             </Alert>
         ) : (

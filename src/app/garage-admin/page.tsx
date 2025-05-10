@@ -6,9 +6,10 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { ServiceRequest, ServiceProvider, VehicleInfo, StaffMember } from '@/types';
 import RequestList from '@/components/garage/RequestList';
 import StaffManagement from '@/components/garage/StaffManagement';
+import GarageManagement from '@/components/garage/GarageManagement'; // Import GarageManagement
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Filter, RefreshCw, Loader2, ShieldAlert, Home, Bell, Users, WrenchIcon, Briefcase } from 'lucide-react';
+import { Filter, RefreshCw, Loader2, ShieldAlert, Home, Bell, Users, WrenchIcon, Briefcase, Building } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -21,19 +22,15 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
-import { getRequestsFromStorage, saveRequestsToStorage, LOCAL_STORAGE_REQUESTS_KEY, getStaffMembersFromStorage } from '@/lib/localStorageUtils';
+import { 
+  getRequestsFromStorage, 
+  saveRequestsToStorage, 
+  LOCAL_STORAGE_REQUESTS_KEY, 
+  getStaffMembersFromStorage,
+  getGaragesFromStorage // Import garage storage functions
+} from '@/lib/localStorageUtils';
 import AssignStaffDialog from '@/components/garage/AssignStaffDialog';
 
-
-// Mock Data for Garages - this can remain as it's static provider info
-const MOCK_GARAGES: ServiceProvider[] = [
-  { id: 'ax-kampala-central', name: 'Auto Xpress - Kampala Central', phone: '(256) 772-123456', etaMinutes: 0, currentLocation: {lat:0.3136, lng:32.5811}, generalLocation: "Kampala Central", servicesOffered: ['Tire Services', 'Battery Replacement', 'Oil Change'] },
-  { id: 'ax-lugogo', name: 'Auto Xpress - Lugogo', phone: '(256) 772-234567', etaMinutes: 0, currentLocation: {lat:0.3270, lng:32.5990}, generalLocation: "Lugogo", servicesOffered: ['Suspension Work', 'Diagnostics'] },
-  { id: 'ax-ntinda', name: 'Auto Xpress - Ntinda', phone: '(256) 772-345678', etaMinutes: 0, currentLocation: {lat:0.3450, lng:32.6120}, generalLocation: "Ntinda", servicesOffered: ['Fuel Delivery', 'Battery Testing'] },
-  { id: 'ax-acacia', name: 'Auto Xpress - Acacia Mall', phone: '(256) 772-456789', etaMinutes: 0, currentLocation: {lat:0.3312, lng:32.5900}, generalLocation: "Kololo", servicesOffered: ['Tire Sales & Fitting', 'Oil and Filter Change'] },
-  { id: 'ax-nakawa', name: 'Auto Xpress - Nakawa', phone: '(256) 772-678901', etaMinutes: 0, currentLocation: {lat:0.3300, lng:32.6150}, generalLocation: "Nakawa", servicesOffered: ['Full Service Maintenance', 'Tire Balancing'] },
-  { id: 'ax-entebbe-victoria-mall', name: 'Auto Xpress - Victoria Mall Entebbe', phone: '(256) 772-567890', etaMinutes: 0, currentLocation: {lat:0.0530, lng:32.4640}, generalLocation: "Entebbe", servicesOffered: ['Battery Jump Start', 'Tire Inflation & Repair'] },
-];
 
 const DEFAULT_VEHICLE_INFO: VehicleInfo = { make: 'Unknown', model: 'Unknown', year: 'N/A', licensePlate: 'N/A' };
 
@@ -44,6 +41,7 @@ export default function GarageAdminPage() {
 
   const [requests, setRequests] = useState<ServiceRequest[]>([]);
   const [staffMembers, setStaffMembers] = useState<StaffMember[]>([]);
+  const [garageProviders, setGarageProviders] = useState<ServiceProvider[]>([]); // State for garages
   const [isLoadingData, setIsLoadingData] = useState(true); 
   const [selectedGarage, setSelectedGarage] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
@@ -63,7 +61,10 @@ export default function GarageAdminPage() {
     })).sort((a, b) => b.requestTime.getTime() - a.requestTime.getTime());
     setRequests(processedRequests);
 
-    if (role === 'admin' || role === 'mechanic' || role === 'customer_relations') { // Ensure staff loaded for all relevant roles
+    const storedGarages = getGaragesFromStorage(); // Load garages
+    setGarageProviders(storedGarages);
+
+    if (role === 'admin' || role === 'mechanic' || role === 'customer_relations') { 
       const storedStaff = getStaffMembersFromStorage();
       setStaffMembers(storedStaff);
     }
@@ -139,7 +140,7 @@ export default function GarageAdminPage() {
 
         if (role === 'admin' && newStatus === 'Accepted' && !updatedReq.assignedStaffId) {
           requestNeedsAssignment = true;
-          setRequestToAssign(updatedReq); // Set request for assignment dialog
+          setRequestToAssign(updatedReq); 
         }
         return updatedReq;
       }
@@ -148,7 +149,7 @@ export default function GarageAdminPage() {
     setRequests(updatedRequests);
     saveRequestsToStorage(updatedRequests);
 
-    if (!requestNeedsAssignment) { // Don't toast for status if assignment dialog will open
+    if (!requestNeedsAssignment) { 
         toast({
           title: "Status Updated",
           description: `Request ${requestId.slice(0,10)}... status changed to ${newStatus}.`,
@@ -167,7 +168,7 @@ export default function GarageAdminPage() {
       title: "Request Assignment Updated",
       description: `Request ${requestId.slice(0,10)}... assigned to ${staffName}.`,
     });
-    setRequestToAssign(null); // Close dialog
+    setRequestToAssign(null); 
   };
 
   const getVisibleRequests = () => {
@@ -195,12 +196,12 @@ export default function GarageAdminPage() {
   const assignableMechanics = allMechanics.filter(mech => !occupiedMechanicIds.has(mech.id));
 
   const refreshData = () => {
-    loadData();
+    loadData(); // This will now also reload garages
     setSelectedGarage('all');
     setSelectedStatus('all');
     toast({
       title: "Data Refreshed",
-      description: "Request and staff list has been updated from storage.",
+      description: "Request, staff, and garage lists have been updated from storage.",
       duration: 3000
     });
   }
@@ -250,6 +251,13 @@ export default function GarageAdminPage() {
   const pendingRequestCount = requests.filter(req => req.status === 'Pending').length;
   const currentRoleIcon = role === 'admin' ? Users : role === 'mechanic' ? WrenchIcon : Briefcase;
 
+  const tabsForRole = ['requests'];
+  if (role === 'admin') {
+    tabsForRole.push('staff', 'garages');
+  }
+  const gridColsClass = `grid-cols-${tabsForRole.length}`;
+
+
   return (
     <div className="flex-grow flex flex-col p-4 md:p-6 space-y-6">
       <Card className="shadow-md flex-shrink-0">
@@ -276,9 +284,10 @@ export default function GarageAdminPage() {
       </Card>
 
       <Tabs defaultValue="requests" className="w-full">
-        <TabsList className="grid w-full grid-cols-1 sm:grid-cols-2 max-w-md">
+        <TabsList className={`grid w-full max-w-lg ${gridColsClass} sm:${gridColsClass}`}>
           <TabsTrigger value="requests">Service Requests</TabsTrigger>
           {role === 'admin' && <TabsTrigger value="staff">Staff Management</TabsTrigger>}
+          {role === 'admin' && <TabsTrigger value="garages">Garage Management</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="requests" className="mt-6">
@@ -296,7 +305,7 @@ export default function GarageAdminPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Garage Branches</SelectItem>
-                    {MOCK_GARAGES.map(g => (
+                    {garageProviders.map(g => ( // Use garageProviders state here
                       <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
                     ))}
                   </SelectContent>
@@ -332,8 +341,8 @@ export default function GarageAdminPage() {
                     requests={visibleRequests} 
                     onStatusChange={handleStatusChange} 
                     onAssignStaff={role === 'admin' ? handleAssignStaff : undefined}
-                    staffList={allMechanics} // Full list for display name
-                    assignableStaffList={assignableMechanics} // Filtered list for assignment dialog
+                    staffList={allMechanics} 
+                    assignableStaffList={assignableMechanics} 
                     currentUserRole={role}
                     currentUserId={user?.uid} 
                     currentUserEmail={user?.email}
@@ -347,6 +356,11 @@ export default function GarageAdminPage() {
         {role === 'admin' && (
           <TabsContent value="staff" className="mt-6">
             <StaffManagement />
+          </TabsContent>
+        )}
+        {role === 'admin' && (
+          <TabsContent value="garages" className="mt-6">
+            <GarageManagement />
           </TabsContent>
         )}
       </Tabs>
@@ -363,4 +377,3 @@ export default function GarageAdminPage() {
     </div>
   );
 }
-
