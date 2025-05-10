@@ -1,9 +1,8 @@
-
 // src/components/garage/RequestCard.tsx
 "use client";
 
-import type { FC, useState } from 'react';
-import React from 'react';
+import type { FC } from 'react';
+import React, { useState } from 'react'; // Added useState import
 import type { ServiceRequest, StaffMember, UserRole } from '@/types';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -16,8 +15,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from '@/components/ui/button';
-import AssignStaffDialog from './AssignStaffDialog'; // To be created
-import LogMechanicDetailsDialog from './LogMechanicDetailsDialog'; // To be created
+import AssignStaffDialog from './AssignStaffDialog'; 
+import LogMechanicDetailsDialog from './LogMechanicDetailsDialog'; 
 
 interface RequestCardProps {
   request: ServiceRequest;
