@@ -17,6 +17,7 @@ import {
 } from '@/lib/firebase'; 
 import { useRouter } from 'next/navigation';
 import { useToast } from "@/hooks/use-toast";
+import { getStaffMembersFromStorage } from '@/lib/localStorageUtils'; // Import for dynamic staff role checking
 
 export type UserRole = 'admin' | 'mechanic' | 'customer_relations' | 'user' | null;
 
@@ -24,12 +25,7 @@ export type UserRole = 'admin' | 'mechanic' | 'customer_relations' | 'user' | nu
 const ADMIN_EMAIL = 'husseinmalingha@gmail.com';
 const ADMIN_PHONE_NUMBER = '+256759794023';
 
-// Mechanic credentials
-const MECHANIC_EMAILS = ['mechanic@roadside.com', 'mechanic@example.com', 'mech@resq.com'];
-
-// Customer Relations credentials
-const CUSTOMER_RELATIONS_EMAILS = ['cr@roadside.com', 'cr@example.com', 'cr@resq.com'];
-
+// Hardcoded staff email lists are removed as roles are now determined dynamically from local storage.
 
 interface AuthContextType {
   user: User | null;
@@ -59,7 +55,7 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
       const unsubscribe = onAuthStateChanged(firebaseAuthInstance, (currentUser) => {
         setUser(currentUser);
         if (currentUser) {
-          let determinedRole: UserRole = 'user';
+          let determinedRole: UserRole = 'user'; // Default to 'user'
           const userEmailLower = currentUser.email?.toLowerCase();
 
           if (
@@ -67,10 +63,16 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
             (currentUser.phoneNumber && currentUser.phoneNumber === ADMIN_PHONE_NUMBER)
           ) {
             determinedRole = 'admin';
-          } else if (userEmailLower && MECHANIC_EMAILS.includes(userEmailLower)) {
-            determinedRole = 'mechanic';
-          } else if (userEmailLower && CUSTOMER_RELATIONS_EMAILS.includes(userEmailLower)) {
-            determinedRole = 'customer_relations';
+          } else if (userEmailLower) {
+            // Check against dynamically stored staff members
+            const staffMembers = getStaffMembersFromStorage();
+            const matchedStaff = staffMembers.find(staff => staff.email.toLowerCase() === userEmailLower);
+            if (matchedStaff) {
+              // Ensure matchedStaff.role is one of 'mechanic' or 'customer_relations'
+              if (matchedStaff.role === 'mechanic' || matchedStaff.role === 'customer_relations') {
+                 determinedRole = matchedStaff.role;
+              }
+            }
           }
           setRole(determinedRole);
         } else {
@@ -129,7 +131,7 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
         try {
           const verifier = new RecaptchaVerifier(
             firebaseAuthInstance as FirebaseAuthType, 
-            recaptchaContainer, // Use the container itself, not its ID string after it's found
+            recaptchaContainer, 
             {
               'size': 'invisible',
               'callback': () => { /* reCAPTCHA solved */ },
@@ -180,8 +182,7 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
       toast({ title: "Error Sending OTP", description: errorMessage, variant: "destructive" });
       
       try {
-        // Attempt to clear or reset the appVerifier to allow for a fresh reCAPTCHA on next attempt
-        appVerifier.clear(); // This method exists on RecaptchaVerifier instance
+        appVerifier.clear(); 
       } catch(e) {
         console.warn("Could not clear appVerifier during OTP send error:", e);
       }
@@ -251,3 +252,4 @@ export const useAuth = (): AuthContextType => {
   }
   return context;
 };
+
