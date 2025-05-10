@@ -7,7 +7,7 @@ import LocationRequester from '@/components/LocationRequester';
 import IssueForm from '@/components/IssueForm';
 import ProviderList from '@/components/ProviderList';
 import MapDisplay from '@/components/MapDisplay';
-import VehicleInfoForm from '@/components/VehicleInfoForm'; // Import VehicleInfoForm
+import VehicleInfoForm from '@/components/VehicleInfoForm';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -15,6 +15,7 @@ import { CheckCircle, MessageSquareHeart, Car, Clock, Loader2, ArrowLeft, Home, 
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
+import { getRequestsFromStorage, saveRequestsToStorage, LOCAL_STORAGE_REQUESTS_KEY } from '@/lib/localStorageUtils';
 
 type AppStep = 'initial' | 'details' | 'providers' | 'tracking' | 'completed';
 
@@ -26,15 +27,14 @@ export default function RoadsideRescuePage() {
   const [userLocation, setUserLocation] = useState<Location | null>(null);
   const [issueDescription, setIssueDescription] = useState<string>('');
   const [confirmedIssueSummary, setConfirmedIssueSummary] = useState<string>('');
-  const [vehicleInfo, setVehicleInfo] = useState<VehicleInfo | null>(null); // State for vehicle info
+  const [vehicleInfo, setVehicleInfo] = useState<VehicleInfo | null>(null);
   const [selectedProvider, setSelectedProvider] = useState<ServiceProvider | null>(null);
-  const [providerETA, setProviderETA] = useState<number | null>(null); // This will now be static once set
+  const [providerETA, setProviderETA] = useState<number | null>(null);
   const [providerCurrentLocation, setProviderCurrentLocation] = useState<Location | null>(null);
   const [hasProviderArrivedSimulation, setHasProviderArrivedSimulation] = useState(false);
   
   const [serviceRequest, setServiceRequest] = useState<ServiceRequestType | null>(null);
 
-  // Submission states for sub-forms
   const [isLocationConfirmed, setIsLocationConfirmed] = useState(false);
   const [isIssueConfirmed, setIsIssueConfirmed] = useState(false);
   const [isVehicleInfoConfirmed, setIsVehicleInfoConfirmed] = useState(false);
@@ -88,14 +88,14 @@ export default function RoadsideRescuePage() {
 
   const handleSelectProvider = (provider: ServiceProvider) => {
     setSelectedProvider(provider);
-    setProviderETA(provider.etaMinutes); // Set the static ETA
-    setProviderCurrentLocation(provider.currentLocation); // Set initial provider location
-    setHasProviderArrivedSimulation(false); // Reset simulation arrival state
+    setProviderETA(provider.etaMinutes); 
+    setProviderCurrentLocation(provider.currentLocation);
+    setHasProviderArrivedSimulation(false); 
     
     if (userLocation && user && vehicleInfo) { 
       const newRequest: ServiceRequestType = {
-        id: `req-${Date.now()}`, 
-        requestId: `RR-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
+        id: `req-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`, // More unique ID
+        requestId: `RR-${Math.random().toString(36).substring(2, 7).toUpperCase()}`,
         userLocation: userLocation,
         issueDescription: issueDescription,
         issueSummary: confirmedIssueSummary,
@@ -103,11 +103,15 @@ export default function RoadsideRescuePage() {
         selectedProvider: provider,
         requestTime: new Date(),
         status: 'Pending', 
-        userName: user.displayName || "N/A",
+        userName: user.displayName || user.email || "N/A",
         userPhone: user.phoneNumber || "N/A"
       };
       setServiceRequest(newRequest);
-      console.log("Service Request Created:", newRequest); 
+      
+      const currentRequests = getRequestsFromStorage();
+      saveRequestsToStorage([...currentRequests, newRequest]);
+      
+      console.log("Service Request Created and Saved to localStorage:", newRequest); 
     }
     
     setCurrentStep('tracking');
@@ -151,20 +155,19 @@ export default function RoadsideRescuePage() {
 
   useEffect(() => {
     let trackingInterval: NodeJS.Timeout;
-    // This effect is for simulating provider movement and eventual arrival for demo
-    if (currentStep === 'tracking' && selectedProvider && userLocation && providerETA !== null) {
-      let simulatedTravelTimeRemaining = providerETA; // Use initial ETA for simulation duration
-      let currentSimulatedProviderLoc = providerCurrentLocation || selectedProvider.currentLocation; // Start from current or initial
+    let statusPollInterval: NodeJS.Timeout;
+
+    if (currentStep === 'tracking' && selectedProvider && userLocation && providerETA !== null && serviceRequest) {
+      let simulatedTravelTimeRemaining = providerETA; 
+      let currentSimulatedProviderLoc = providerCurrentLocation || selectedProvider.currentLocation; 
 
       trackingInterval = setInterval(() => {
         if (simulatedTravelTimeRemaining > 0) {
-          simulatedTravelTimeRemaining -= 1; // This controls the simulation duration
+          simulatedTravelTimeRemaining -= 1; 
         }
 
-        // Update provider location for map display
         if (userLocation && currentSimulatedProviderLoc && selectedProvider) {
-            const totalSteps = providerETA > 0 ? providerETA : 1; // Steps based on original ETA
-            // Calculate how many steps should have been taken based on elapsed time vs total ETA
+            const totalSteps = providerETA > 0 ? providerETA : 1; 
             const stepsProgressRatio = Math.min((providerETA - simulatedTravelTimeRemaining) / totalSteps, 1);
 
             const initialProviderLat = selectedProvider.currentLocation.lat;
@@ -179,24 +182,44 @@ export default function RoadsideRescuePage() {
             setProviderCurrentLocation(currentSimulatedProviderLoc);
         }
 
-        if (simulatedTravelTimeRemaining <= 0) {
-          clearInterval(trackingInterval);
-          setHasProviderArrivedSimulation(true); // Set arrival flag
-          setCurrentStep('completed'); // Transition to completed step
-          
+        if (simulatedTravelTimeRemaining <= 0 && !hasProviderArrivedSimulation) {
+          // No longer clearing interval here immediately, wait for status update to 'Completed' or manual step change
+          setHasProviderArrivedSimulation(true); 
+          // Don't automatically go to 'completed', wait for status update from garage or if garage sets to completed
           if (selectedProvider) { 
             toast({
-              title: "Provider Arrived!",
-              description: `${selectedProvider.name} should be at your location.`,
+              title: "Provider should be Arriving!",
+              description: `${selectedProvider.name} is expected at your location. Check request status.`,
               duration: 7000,
             });
           }
-          return;
         }
-      }, 2000); // Interval for simulation updates (e.g., every 2 seconds for demo)
+      }, 2000);
+
+      // Poll for status updates
+      statusPollInterval = setInterval(() => {
+        const allRequests = getRequestsFromStorage();
+        const updatedRequest = allRequests.find(req => req.id === serviceRequest.id);
+        if (updatedRequest && updatedRequest.status !== serviceRequest.status) {
+          toast({
+            title: "Request Status Updated",
+            description: `Your request status is now: ${updatedRequest.status}`,
+          });
+          setServiceRequest(updatedRequest); // Update local service request state
+          if (updatedRequest.status === 'Completed' || updatedRequest.status === 'Cancelled') {
+            setCurrentStep('completed');
+            clearInterval(trackingInterval); // Stop simulation if completed/cancelled
+            clearInterval(statusPollInterval); // Stop polling
+          }
+        }
+      }, 5000); // Poll every 5 seconds
     }
-    return () => clearInterval(trackingInterval);
-  }, [currentStep, selectedProvider, userLocation, providerETA, toast]); // providerCurrentLocation removed from deps
+    return () => {
+      clearInterval(trackingInterval);
+      clearInterval(statusPollInterval);
+    };
+  // providerCurrentLocation removed as it causes re-runs. ServiceRequest added for status polling.
+  }, [currentStep, selectedProvider, userLocation, providerETA, toast, serviceRequest, hasProviderArrivedSimulation]); 
 
 
   const allDetailsProvided = isLocationConfirmed && isIssueConfirmed && isVehicleInfoConfirmed;
@@ -253,11 +276,11 @@ export default function RoadsideRescuePage() {
       case 'details':
         if (!user && isFirebaseReady) { 
           router.push('/login?redirect=/');
-          return <Loader2 className="h-12 w-12 animate-spin text-primary" />;
+          return <div className="flex-grow flex items-center justify-center"><Loader2 className="h-12 w-12 animate-spin text-primary" /><p className="ml-3">Redirecting to login...</p></div>;
         }
-        if (!isFirebaseReady) {
+        if (!isFirebaseReady && !authLoading) { // Check authLoading here too
              return (
-                <Alert variant="destructive">
+                <Alert variant="destructive" className="w-full max-w-md">
                     <AlertCircleIcon className="h-4 w-4" />
                     <AlertTitle>Service Unavailable</AlertTitle>
                     <AlertDescription>Cannot load details form as authentication service is not ready.</AlertDescription>
@@ -305,7 +328,7 @@ export default function RoadsideRescuePage() {
                 Find Service Providers
               </Button>
               {!allDetailsProvided && (
-                <p className="text-xs text-orange-600 text-center">
+                <p className="text-xs text-destructive text-center">
                   Please confirm location, issue, and vehicle details to proceed.
                 </p>
               )}
@@ -330,12 +353,23 @@ export default function RoadsideRescuePage() {
           </div>
         );
       case 'tracking':
-        if (!selectedProvider || !serviceRequest) return <p>Error: No provider selected or request not created.</p>;
+        if (!selectedProvider || !serviceRequest) return <div className="text-center"><Loader2 className="h-8 w-8 animate-spin text-primary mx-auto my-4" /><p>Loading request details...</p></div>;
         return (
           <div className="w-full max-w-2xl space-y-6 animate-fadeIn">
-            <Button variant="outline" onClick={() => setCurrentStep('providers')} className="mb-2 self-start">
-              <ArrowLeft className="mr-2 h-4 w-4" /> Change Provider
-            </Button>
+            <div className="flex justify-between items-center">
+              <Button variant="outline" onClick={() => setCurrentStep('providers')} className="mb-2 self-start">
+                <ArrowLeft className="mr-2 h-4 w-4" /> Change Provider
+              </Button>
+              <span className={`px-3 py-1 text-sm font-semibold rounded-full text-white ${
+                  serviceRequest.status === 'Pending' ? 'bg-yellow-500' :
+                  serviceRequest.status === 'Accepted' ? 'bg-blue-500' :
+                  serviceRequest.status === 'In Progress' ? 'bg-indigo-500' :
+                  serviceRequest.status === 'Completed' ? 'bg-green-500' :
+                  serviceRequest.status === 'Cancelled' ? 'bg-red-500' : 'bg-gray-500'
+              }`}>
+                Status: {serviceRequest.status}
+              </span>
+            </div>
             <Card className="shadow-xl">
               <CardHeader>
                 <CardTitle className="text-2xl">Tracking Your Assistance (ID: {serviceRequest.requestId})</CardTitle>
@@ -354,22 +388,28 @@ export default function RoadsideRescuePage() {
                      </p>
                    )}
                   <div className="mt-3 pt-3 border-t">
-                  {providerETA !== null && !hasProviderArrivedSimulation && (
+                  {providerETA !== null && !hasProviderArrivedSimulation && serviceRequest.status !== 'Completed' && serviceRequest.status !== 'Cancelled' && (
                     <div className="flex items-center text-xl font-semibold text-primary">
                       <Clock className="mr-2 h-6 w-6" />
-                      Estimated Arrival: {providerETA} min
+                      Original Est. Arrival: {providerETA} min
                     </div>
                   )}
-                  {hasProviderArrivedSimulation && (
+                  {hasProviderArrivedSimulation && serviceRequest.status !== 'Completed' && serviceRequest.status !== 'Cancelled' && (
+                     <div className="flex items-center text-xl font-semibold text-orange-500">
+                      <Clock className="mr-2 h-6 w-6" />
+                      Provider expected. Current status: {serviceRequest.status}
+                    </div>
+                  )}
+                  {serviceRequest.status === 'Completed' && (
                      <div className="flex items-center text-xl font-semibold text-green-600">
                       <CheckCircle className="mr-2 h-6 w-6" />
-                      Provider should be arriving now!
+                      Service Completed!
                     </div>
                   )}
-                  {providerETA === null && !hasProviderArrivedSimulation && ( 
-                    <div className="flex items-center text-lg text-muted-foreground">
-                      <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                      Calculating arrival...
+                   {serviceRequest.status === 'Cancelled' && (
+                     <div className="flex items-center text-xl font-semibold text-red-600">
+                      <AlertCircleIcon className="mr-2 h-6 w-6" />
+                      Service Cancelled
                     </div>
                   )}
                   </div>
@@ -379,28 +419,33 @@ export default function RoadsideRescuePage() {
           </div>
         );
       case 'completed':
-         if (!serviceRequest) return <p>Error: Service details not found.</p>;
+         if (!serviceRequest) return <div className="text-center"><Loader2 className="h-8 w-8 animate-spin text-primary mx-auto my-4" /><p>Loading service details...</p></div>;
         return (
           <Card className="w-full max-w-md text-center shadow-xl animate-fadeIn">
             <CardHeader>
-               <div className="mx-auto bg-green-500 text-primary-foreground rounded-full p-4 w-fit mb-4">
-                <MessageSquareHeart className="h-12 w-12" />
+               <div className={`mx-auto text-primary-foreground rounded-full p-4 w-fit mb-4 ${serviceRequest.status === 'Completed' ? 'bg-green-500' : 'bg-red-500'}`}>
+                {serviceRequest.status === 'Completed' ? <MessageSquareHeart className="h-12 w-12" /> : <AlertCircleIcon className="h-12 w-12" />}
               </div>
-              <CardTitle className="text-3xl font-bold">Service Confirmed! (ID: {serviceRequest.requestId})</CardTitle>
-               {selectedProvider && <CardDescription className="text-lg text-muted-foreground">{selectedProvider.name} has been notified and should be with you shortly, or has arrived.</CardDescription>}
+              <CardTitle className="text-3xl font-bold">Service {serviceRequest.status} (ID: {serviceRequest.requestId})</CardTitle>
+               {selectedProvider && <CardDescription className="text-lg text-muted-foreground">
+                {serviceRequest.status === 'Completed' ? `${selectedProvider.name} has completed the service.` : `Your request with ${selectedProvider.name} was cancelled.`}
+                </CardDescription>}
             </CardHeader>
             <CardContent>
-              <p className="mb-6">We hope you get back on your way safely and quickly!</p>
+              <p className="mb-6">
+                {serviceRequest.status === 'Completed' ? "We hope you're back on your way safely!" : "We're sorry this request didn't work out."}
+              </p>
               {serviceRequest.vehicleInfo && (
                   <p className="text-sm text-muted-foreground mb-3">
                     For your {serviceRequest.vehicleInfo.make} {serviceRequest.vehicleInfo.model}.
                   </p>
               )}
-              <Alert variant="default">
-                <CheckCircle className="h-4 w-4 text-green-500" />
-                <AlertTitle>Confirmation</AlertTitle>
+              <Alert variant={serviceRequest.status === 'Completed' ? "default" : "destructive"}>
+                {serviceRequest.status === 'Completed' ? <CheckCircle className="h-4 w-4 text-green-500" /> : <AlertCircleIcon className="h-4 w-4"/> }
+                <AlertTitle>{serviceRequest.status === 'Completed' ? "Confirmation" : "Notification"}</AlertTitle>
                 <AlertDescription>
-                  Your request has been processed. If you need further assistance, please contact {selectedProvider?.name || 'the provider'} directly.
+                  {serviceRequest.status === 'Completed' ? `Your request has been marked as completed.` : `Your request has been marked as cancelled.`}
+                  {selectedProvider && ` If you have any questions, please contact ${selectedProvider.name} directly.`}
                 </AlertDescription>
               </Alert>
             </CardContent>
@@ -408,9 +453,11 @@ export default function RoadsideRescuePage() {
               <Button size="lg" className="w-full text-lg py-7" onClick={resetApp}>
                 <Home className="mr-2 h-5 w-5" /> Back to Home
               </Button>
-               <Button size="sm" variant="outline" className="w-full" onClick={() => {setHasProviderArrivedSimulation(false); setCurrentStep('tracking');}}>
-                <RefreshCw className="mr-2 h-4 w-4" /> View Tracking Again
-              </Button>
+               {serviceRequest.status !== 'Completed' && serviceRequest.status !== 'Cancelled' && (
+                 <Button size="sm" variant="outline" className="w-full" onClick={() => {setHasProviderArrivedSimulation(false); setCurrentStep('tracking');}}>
+                  <RefreshCw className="mr-2 h-4 w-4" /> View Tracking Again
+                </Button>
+               )}
             </CardFooter>
           </Card>
         );
@@ -420,7 +467,7 @@ export default function RoadsideRescuePage() {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center flex-grow w-full py-8">
+    <div className="flex flex-col items-center justify-center flex-grow w-full py-8 min-h-full">
       {renderStepContent()}
     </div>
   );

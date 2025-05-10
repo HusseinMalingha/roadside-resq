@@ -2,12 +2,12 @@
 // src/app/garage-admin/page.tsx
 "use client";
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import type { ServiceRequest, ServiceProvider, VehicleInfo } from '@/types';
 import RequestList from '@/components/garage/RequestList';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Filter, RefreshCw, Loader2, ShieldAlert, Home, Bell } from 'lucide-react';
+import { Filter, RefreshCw, Loader2, ShieldAlert, Home, Bell, Inbox } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -19,8 +19,9 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
+import { getRequestsFromStorage, saveRequestsToStorage, LOCAL_STORAGE_REQUESTS_KEY } from '@/lib/localStorageUtils';
 
-// Mock Data - In a real app, this would come from a backend
+// Mock Data for Garages - this can remain as it's static provider info
 const MOCK_GARAGES: ServiceProvider[] = [
   { id: 'ax-kampala-central', name: 'Auto Xpress - Kampala Central', phone: '(256) 772-123456', etaMinutes: 0, currentLocation: {lat:0.3136, lng:32.5811}, generalLocation: "Kampala Central", servicesOffered: ['Tire Services', 'Battery Replacement', 'Oil Change'] },
   { id: 'ax-lugogo', name: 'Auto Xpress - Lugogo', phone: '(256) 772-234567', etaMinutes: 0, currentLocation: {lat:0.3270, lng:32.5990}, generalLocation: "Lugogo", servicesOffered: ['Suspension Work', 'Diagnostics'] },
@@ -32,177 +33,136 @@ const MOCK_GARAGES: ServiceProvider[] = [
 
 const DEFAULT_VEHICLE_INFO: VehicleInfo = { make: 'Unknown', model: 'Unknown', year: 'N/A', licensePlate: 'N/A' };
 
-const INITIAL_MOCK_REQUESTS: ServiceRequest[] = [
-  {
-    id: 'req1',
-    requestId: 'RR-001',
-    userLocation: { lat: 0.3150, lng: 32.5830 },
-    issueDescription: 'Car is making a loud screeching noise from the front when braking. Seems urgent.',
-    issueSummary: 'Brake Failure',
-    vehicleInfo: { make: 'Toyota', model: 'Premio', year: '2012', licensePlate: 'UAB 123X' },
-    selectedProvider: MOCK_GARAGES[0],
-    requestTime: new Date(Date.now() - 1000 * 60 * 15), 
-    status: 'Pending',
-    userName: 'Aisha K.',
-    userPhone: '256-700-111222'
-  },
-  {
-    id: 'req2',
-    requestId: 'RR-002',
-    userLocation: { lat: 0.3300, lng: 32.5950 },
-    issueDescription: 'My car won\'t start. It just clicks. I think the battery is dead.',
-    issueSummary: 'Dead battery',
-    vehicleInfo: { make: 'Honda', model: 'CRV', year: '2017', licensePlate: 'UBC 456Y' },
-    selectedProvider: MOCK_GARAGES[1],
-    requestTime: new Date(Date.now() - 1000 * 60 * 45), 
-    status: 'Accepted',
-    userName: 'John B.',
-    userPhone: '256-777-333444'
-  },
-  {
-    id: 'req3',
-    requestId: 'RR-003',
-    userLocation: { lat: 0.3400, lng: 32.6100 },
-    issueDescription: 'I have a flat tire on the rear passenger side. I have a spare but need help changing it.',
-    issueSummary: 'Flat tire',
-    vehicleInfo: { make: 'Subaru', model: 'Forester', year: '2015', licensePlate: 'UAD 789Z' },
-    selectedProvider: MOCK_GARAGES[2],
-    requestTime: new Date(Date.now() - 1000 * 60 * 120), 
-    status: 'In Progress',
-    userName: 'Maria N.',
-    userPhone: '256-755-555666'
-  },
-   {
-    id: 'req4',
-    requestId: 'RR-004',
-    userLocation: { lat: 0.3000, lng: 32.5700 },
-    issueDescription: 'Ran out of fuel on the highway. Need urgent delivery.',
-    issueSummary: 'Fuel delivery',
-    vehicleInfo: { make: 'Nissan', model: 'X-Trail', year: '2019', licensePlate: 'UBE 101A' },
-    selectedProvider: MOCK_GARAGES[0],
-    requestTime: new Date(Date.now() - 1000 * 60 * 5), 
-    status: 'Pending',
-    userName: 'David S.',
-    userPhone: '256-788-777888'
-  },
-];
 
 export default function GarageAdminPage() {
   const { user, role, loading: authLoading } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
 
-  const [requests, setRequests] = useState<ServiceRequest[]>(INITIAL_MOCK_REQUESTS.map(r => ({...r, vehicleInfo: r.vehicleInfo || DEFAULT_VEHICLE_INFO})));
+  const [requests, setRequests] = useState<ServiceRequest[]>([]);
+  const [isLoadingRequests, setIsLoadingRequests] = useState(true);
   const [selectedGarage, setSelectedGarage] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const prevPendingCountRef = useRef<number>(0);
+  const initialLoadRef = useRef(true);
 
+
+  const loadRequests = useCallback(() => {
+    setIsLoadingRequests(true);
+    const storedRequests = getRequestsFromStorage();
+    // Ensure vehicleInfo has defaults if missing
+    const processedRequests = storedRequests.map(r => ({
+        ...r,
+        vehicleInfo: r.vehicleInfo || DEFAULT_VEHICLE_INFO,
+        requestTime: new Date(r.requestTime) // Ensure requestTime is a Date object
+    })).sort((a, b) => b.requestTime.getTime() - a.requestTime.getTime()); // Sort by most recent
+    setRequests(processedRequests);
+    setIsLoadingRequests(false);
+    return processedRequests;
+  }, []);
+  
   useEffect(() => {
     if (!authLoading && !user) {
       router.push('/login?redirect=/garage-admin');
+    } else if (user) {
+      const loadedRequests = loadRequests();
+      const currentPendingCount = loadedRequests.filter(req => req.status === 'Pending').length;
+      prevPendingCountRef.current = currentPendingCount; // Initialize prev count on load
+      initialLoadRef.current = false;
     }
-  }, [authLoading, user, router]);
+  }, [authLoading, user, router, loadRequests]);
+
 
   useEffect(() => {
+    // Listener for localStorage changes from other tabs/windows (optional, but good for sync)
+    const handleStorageChange = (event: StorageEvent) => {
+      if (event.key === LOCAL_STORAGE_REQUESTS_KEY) {
+        const newRequests = loadRequests();
+        const currentPendingCount = newRequests.filter(req => req.status === 'Pending').length;
+
+        if (currentPendingCount > prevPendingCountRef.current) {
+          toast({
+            title: "🔔 New Pending Request(s)!",
+            description: `A new service request has been logged. ${currentPendingCount} pending.`,
+            variant: "default",
+            duration: 7000,
+          });
+        }
+        prevPendingCountRef.current = currentPendingCount;
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, [loadRequests, toast]);
+
+
+  // Notification logic for new requests or changes in pending count
+  useEffect(() => {
+    if (initialLoadRef.current || isLoadingRequests) return; // Don't run on initial load until requests are set
+
     const currentPendingRequests = requests.filter(req => req.status === 'Pending');
     const currentPendingCount = currentPendingRequests.length;
-
-    if (currentPendingCount > 0 && currentPendingCount !== prevPendingCountRef.current) {
+    
+    if (currentPendingCount > prevPendingCountRef.current) {
       toast({
-        title: "🔔 Pending Service Requests Update",
-        description: `You have ${currentPendingCount} pending request(s).`,
+        title: "🔔 New Pending Service Request(s)",
+        description: `You have ${currentPendingCount} pending request(s). ${currentPendingCount - prevPendingCountRef.current} new.`,
         variant: "default",
         duration: 6000,
       });
-    } else if (currentPendingCount > 0 && prevPendingCountRef.current === 0 && currentPendingCount > 0) {
-       toast({
-        title: "🔔 New Pending Requests",
-        description: `There are ${currentPendingCount} new pending request(s) to review.`,
-        variant: "default",
-        duration: 6000,
-      });
+    } else if (currentPendingCount < prevPendingCountRef.current && prevPendingCountRef.current > 0) {
+        // This case might be a status change from Pending to something else
+        toast({
+            title: "ℹ️ Pending Requests Updated",
+            description: `Number of pending requests changed from ${prevPendingCountRef.current} to ${currentPendingCount}.`,
+            duration: 4000,
+        });
     }
+    // Update ref after comparison
     prevPendingCountRef.current = currentPendingCount;
-  }, [requests, toast]);
+  }, [requests, toast, isLoadingRequests]);
 
 
   const handleStatusChange = (requestId: string, newStatus: ServiceRequest['status']) => {
-    setRequests(prevRequests =>
-      prevRequests.map(req =>
-        req.id === requestId ? { ...req, status: newStatus } : req
-      )
+    const updatedRequests = requests.map(req =>
+      req.id === requestId ? { ...req, status: newStatus } : req
     );
+    setRequests(updatedRequests);
+    saveRequestsToStorage(updatedRequests); // Save changes to localStorage
     toast({
       title: "Status Updated",
-      description: `Request ${requestId.slice(0,6)}... status changed to ${newStatus}.`,
+      description: `Request ${requestId.slice(0,10)}... status changed to ${newStatus}.`,
     });
   };
 
   const filteredRequests = requests.filter(req => {
-    const garageMatch = selectedGarage === 'all' || req.selectedProvider.id === selectedGarage;
+    const garageMatch = selectedGarage === 'all' || (req.selectedProvider && req.selectedProvider.id === selectedGarage);
     const statusMatch = selectedStatus === 'all' || req.status === selectedStatus;
     return garageMatch && statusMatch;
   });
   
   const refreshData = () => {
-    const now = Date.now();
-    let newRequestsArray = INITIAL_MOCK_REQUESTS.map((r, index) => ({
-      ...r,
-      vehicleInfo: r.vehicleInfo || DEFAULT_VEHICLE_INFO,
-      id: `req${index + 1}-${now}`, 
-      requestTime: new Date(now - 1000 * 60 * (Math.random() * 120)), 
-      status: ['Pending', 'Accepted', 'In Progress'][Math.floor(Math.random() * 3)] as ServiceRequest['status'] 
-    }));
-
-    // Simulate a new request being added for demonstration
-    if (Math.random() > 0.5) { // 50% chance to add a new demo request
-        const newDemoRequest: ServiceRequest = {
-            id: `newReq-${now}`,
-            requestId: `RR-${Math.random().toString(36).substring(2, 7).toUpperCase()}`,
-            userLocation: { lat: 0.3250 + (Math.random() - 0.5) * 0.05, lng: 32.5850 + (Math.random() - 0.5) * 0.05 },
-            issueDescription: 'This is a brand new simulated request for demonstration purposes.',
-            issueSummary: ['Lockout', 'Overheating', 'Unknown Noise'][Math.floor(Math.random() * 3)],
-            vehicleInfo: { 
-                make: ['Kia', 'Mazda', 'Ford'][Math.floor(Math.random() * 3)], 
-                model: ['Sportage', 'CX-5', 'Ranger'][Math.floor(Math.random() * 3)], 
-                year: (2010 + Math.floor(Math.random() * 13)).toString(), 
-                licensePlate: `UCD ${Math.floor(Math.random()*900)+100}${['X','Y','Z'][Math.floor(Math.random()*3)]}` 
-            },
-            selectedProvider: MOCK_GARAGES[Math.floor(Math.random() * MOCK_GARAGES.length)],
-            requestTime: new Date(),
-            status: 'Pending', // New requests are typically pending
-            userName: `Demo User ${Math.floor(Math.random()*100)}`,
-            userPhone: `256-7${Math.floor(Math.random()*100000000).toString().padStart(8, '0')}`
-        };
-        newRequestsArray.unshift(newDemoRequest); // Add to the beginning of the array
-        toast({
-            title: "🎉 New Request Logged!",
-            description: `Request ${newDemoRequest.requestId} for ${newDemoRequest.issueSummary} has been added.`,
-            variant: "default",
-            duration: 7000,
-        });
-    }
-    
-    setRequests(newRequestsArray);
+    loadRequests();
     setSelectedGarage('all');
     setSelectedStatus('all');
     toast({
       title: "Data Refreshed",
-      description: "Request list has been updated.",
+      description: "Request list has been updated from storage.",
       duration: 3000
     });
   }
 
-
-  if (authLoading) {
+  if (authLoading || isLoadingRequests && initialLoadRef.current) { // Show loader on initial data load too
     return (
       <div className="flex-grow flex items-center justify-center">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
+        <p className="ml-3">Loading requests...</p>
       </div>
     );
   }
 
-  if (!user) {
+  if (!user && !authLoading) { // Redirect if not logged in and auth is done loading
     return (
         <div className="flex-grow flex items-center justify-center">
              <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -235,6 +195,8 @@ export default function GarageAdminPage() {
     );
   }
 
+  const pendingRequestCount = requests.filter(req => req.status === 'Pending').length;
+
   return (
     <div className="flex-grow flex flex-col p-4 md:p-6 space-y-6">
       <Card className="shadow-md flex-shrink-0">
@@ -244,7 +206,7 @@ export default function GarageAdminPage() {
               <CardTitle className="text-2xl md:text-3xl">Garage Service Requests</CardTitle>
               <CardDescription>View and manage incoming roadside assistance requests. Logged in as: <span className="font-semibold capitalize">{role}</span></CardDescription>
             </div>
-            {requests.filter(req => req.status === 'Pending').length > 0 && (
+            {pendingRequestCount > 0 && (
                  <div className="relative">
                     <Bell className="h-6 w-6 text-primary animate-pulse" />
                     <span className="absolute -top-1 -right-1 flex h-3 w-3">
@@ -287,15 +249,31 @@ export default function GarageAdminPage() {
           </div>
            <p className="text-sm text-muted-foreground">
             Displaying {filteredRequests.length} of {requests.length} requests. 
-            ({requests.filter(req => req.status === 'Pending').length} pending)
+            ({pendingRequestCount} pending)
           </p>
         </CardContent>
       </Card>
       
-      <div className="flex-grow flex flex-col min-h-0">
-        <RequestList requests={filteredRequests} onStatusChange={handleStatusChange} />
-      </div>
+      {isLoadingRequests && !initialLoadRef.current ? ( // Loader when refreshing non-initially
+        <div className="flex-grow flex items-center justify-center">
+          <Loader2 className="h-10 w-10 animate-spin text-primary" />
+           <p className="ml-3">Refreshing requests...</p>
+        </div>
+      ) : requests.length === 0 ? (
+        <Card className="flex-grow flex flex-col items-center justify-center text-center py-10">
+            <CardContent>
+                <Inbox className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
+                <CardTitle className="text-xl">No Service Requests Logged</CardTitle>
+                <CardDescription className="mt-2">There are currently no user-submitted requests.</CardDescription>
+            </CardContent>
+        </Card>
+      ) : (
+        <div className="flex-grow flex flex-col min-h-0">
+         <RequestList requests={filteredRequests} onStatusChange={handleStatusChange} />
+        </div>
+      )}
       
     </div>
   );
 }
+
