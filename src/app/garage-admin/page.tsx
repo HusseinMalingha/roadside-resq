@@ -300,10 +300,10 @@ export default function GarageAdminPage() {
       </Card>
 
       <Tabs defaultValue="requests" className="w-full">
-        <TabsList className="max-w-lg mx-auto w-full">
-          <TabsTrigger value="requests" className="flex-1">Service Requests</TabsTrigger>
-          {role === 'admin' && <TabsTrigger value="staff" className="flex-1">Staff Management</TabsTrigger>}
-          {role === 'admin' && <TabsTrigger value="garages" className="flex-1">Garage Management</TabsTrigger>}
+        <TabsList className="max-w-lg mx-auto w-full flex flex-col space-y-1 sm:space-y-0 sm:flex-row sm:space-x-1 sm:h-10">
+          <TabsTrigger value="requests" className="flex-1 w-full sm:w-auto">Service Requests</TabsTrigger>
+          {role === 'admin' && <TabsTrigger value="staff" className="flex-1 w-full sm:w-auto">Staff Management</TabsTrigger>}
+          {role === 'admin' && <TabsTrigger value="garages" className="flex-1 w-full sm:w-auto">Garage Management</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="requests" className="mt-6">
@@ -393,3 +393,4 @@ export default function GarageAdminPage() {
     </div>
   );
 }
+
