@@ -20,8 +20,13 @@ import { useToast } from "@/hooks/use-toast";
 
 export type UserRole = 'admin' | 'mechanic' | 'user' | null;
 
-const ADMIN_EMAILS = ['admin@roadside.com', 'admin@example.com'];
+// Admin credentials - can be updated here
+const ADMIN_EMAIL = 'husseinmalingha@gmail.com';
+const ADMIN_PHONE_NUMBER = '+256759794023';
+
+// Mechanic credentials
 const MECHANIC_EMAILS = ['mechanic@roadside.com', 'mechanic@example.com'];
+
 
 interface AuthContextType {
   user: User | null;
@@ -52,9 +57,13 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
         setUser(currentUser);
         if (currentUser) {
           let determinedRole: UserRole = 'user';
-          if (currentUser.email && ADMIN_EMAILS.includes(currentUser.email)) {
+          // Check for admin role (case-insensitive email check)
+          if (
+            (currentUser.email && currentUser.email.toLowerCase() === ADMIN_EMAIL.toLowerCase()) ||
+            (currentUser.phoneNumber && currentUser.phoneNumber === ADMIN_PHONE_NUMBER)
+          ) {
             determinedRole = 'admin';
-          } else if (currentUser.email && MECHANIC_EMAILS.includes(currentUser.email)) {
+          } else if (currentUser.email && MECHANIC_EMAILS.includes(currentUser.email.toLowerCase())) {
             determinedRole = 'mechanic';
           }
           setRole(determinedRole);
@@ -102,13 +111,11 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
   const setupRecaptcha = useCallback((elementId: string): RecaptchaVerifier | null => {
     if (!firebaseAuthInstance || !isFirebaseReady) {
       console.error("setupRecaptcha: Firebase not configured. Cannot setup reCAPTCHA.");
-      // Toast is handled by the caller (LoginPage) if setup fails and verifier is null
       return null;
     }
     if (typeof window !== 'undefined') {
       const recaptchaContainer = document.getElementById(elementId);
       if (recaptchaContainer) {
-        // Clear previous reCAPTCHA instances from the container to prevent errors
         while (recaptchaContainer.firstChild) {
             recaptchaContainer.removeChild(recaptchaContainer.firstChild);
         }
@@ -121,7 +128,6 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
               'callback': () => { /* reCAPTCHA solved */ },
               'expired-callback': () => {
                 toast({ title: "ReCAPTCHA Expired", description: "Please try verifying again.", variant: "destructive" });
-                // Potentially clear and nullify verifier in LoginPage state here
               }
             }
           );
@@ -137,7 +143,7 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
       }
     }
     return null;
-  }, [isFirebaseReady, toast]); // firebaseAuthInstance is stable after init
+  }, [isFirebaseReady, toast]);
 
   const signInWithPhoneNumberStep1 = async (phoneNumber: string, appVerifier: RecaptchaVerifier): Promise<ConfirmationResult | null> => {
     if (!firebaseAuthInstance || !isFirebaseReady) {
@@ -165,8 +171,6 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
       
       toast({ title: "Error Sending OTP", description: errorMessage, variant: "destructive" });
       
-      // Attempt to clear the appVerifier to force re-initialization on next try
-      // This is now primarily handled in LoginPage by setting appVerifier state to null
       try {
         appVerifier.clear();
       } catch(e) {
@@ -203,7 +207,7 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
     }
   };
 
-  const signOutUser = async () => { // Renamed to avoid conflict with firebaseSignOut
+  const signOutUser = async () => { 
     if (!firebaseAuthInstance || !isFirebaseReady) {
       toast({ title: "Authentication Error", description: "Firebase not configured. Cannot sign out.", variant: "destructive" });
       console.error("signOut: Firebase not ready.");
@@ -213,9 +217,9 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
     try {
       await firebaseSignOut(firebaseAuthInstance);
       toast({ title: "Signed Out", description: "You have been signed out successfully." });
-      setUser(null); // Explicitly set user to null
-      setRole(null);   // Explicitly set role to null
-      router.push('/login'); // Redirect to login after sign out
+      setUser(null); 
+      setRole(null);   
+      router.push('/login'); 
     } catch (error: any) {
       console.error("Error signing out:", error);
       toast({ title: "Sign-Out Failed", description: error.message || "An unexpected error occurred.", variant: "destructive" });
