@@ -35,12 +35,12 @@ const Header = () => {
           <span>Roadside Rescue</span>
         </Link>
         <nav className="flex items-center gap-3">
-          <Link href="/garage-admin" legacyBehavior passHref>
-            <Button variant="ghost" className="text-primary-foreground hover:bg-primary/80">
+          <Button asChild variant="ghost" className="text-primary-foreground hover:bg-primary/80 hover:text-primary-foreground">
+            <Link href="/garage-admin">
               <Wrench className="mr-2 h-5 w-5" />
               Garage Admin
-            </Button>
-          </Link>
+            </Link>
+          </Button>
 
           {loading ? (
              <Loader2 className="h-6 w-6 animate-spin text-primary-foreground" />
@@ -74,12 +74,12 @@ const Header = () => {
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            <Link href="/login" legacyBehavior passHref>
-              <Button variant="outline" className="text-primary-foreground border-primary-foreground/50 hover:bg-primary/80 hover:text-primary-foreground">
+            <Button asChild variant="outline" className="text-primary-foreground border-primary-foreground/50 hover:bg-primary/80 hover:text-primary-foreground">
+              <Link href="/login">
                 <LogIn className="mr-2 h-5 w-5" />
                 Login
-              </Button>
-            </Link>
+              </Link>
+            </Button>
           )}
         </nav>
       </div>
