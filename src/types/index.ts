@@ -22,6 +22,15 @@ export interface VehicleInfo {
   licensePlate: string;
 }
 
+export type StaffRole = 'mechanic' | 'customer_relations';
+
+export interface StaffMember {
+  id: string; // Unique identifier for the staff member (e.g., UUID)
+  name: string;
+  email: string; // Email of the staff member, can be used for matching with Firebase User
+  role: StaffRole;
+}
+
 export interface ServiceRequest {
   id: string;
   requestId: string; // A more user-friendly request ID
@@ -34,7 +43,10 @@ export interface ServiceRequest {
   status: 'Pending' | 'Accepted' | 'In Progress' | 'Completed' | 'Cancelled';
   userName: string; // User's name, from auth or manual input
   userPhone: string; // User's contact, from auth or manual input
-  vehicleInfo?: VehicleInfo; // Added vehicle information
+  vehicleInfo?: VehicleInfo;
+  assignedStaffId?: string; // ID of the StaffMember (mechanic) assigned to this request
+  mechanicNotes?: string; // Notes logged by the mechanic about the issue
+  resourcesUsed?: string; // Resources/parts used by the mechanic
 }
 
 // Optional: Define a user profile type if you store more user data

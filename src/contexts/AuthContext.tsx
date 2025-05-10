@@ -18,14 +18,17 @@ import {
 import { useRouter } from 'next/navigation';
 import { useToast } from "@/hooks/use-toast";
 
-export type UserRole = 'admin' | 'mechanic' | 'user' | null;
+export type UserRole = 'admin' | 'mechanic' | 'customer_relations' | 'user' | null;
 
 // Admin credentials - can be updated here
 const ADMIN_EMAIL = 'husseinmalingha@gmail.com';
 const ADMIN_PHONE_NUMBER = '+256759794023';
 
 // Mechanic credentials
-const MECHANIC_EMAILS = ['mechanic@roadside.com', 'mechanic@example.com'];
+const MECHANIC_EMAILS = ['mechanic@roadside.com', 'mechanic@example.com', 'mech@resq.com'];
+
+// Customer Relations credentials
+const CUSTOMER_RELATIONS_EMAILS = ['cr@roadside.com', 'cr@example.com', 'cr@resq.com'];
 
 
 interface AuthContextType {
@@ -57,14 +60,17 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
         setUser(currentUser);
         if (currentUser) {
           let determinedRole: UserRole = 'user';
-          // Check for admin role (case-insensitive email check)
+          const userEmailLower = currentUser.email?.toLowerCase();
+
           if (
-            (currentUser.email && currentUser.email.toLowerCase() === ADMIN_EMAIL.toLowerCase()) ||
+            (userEmailLower && userEmailLower === ADMIN_EMAIL.toLowerCase()) ||
             (currentUser.phoneNumber && currentUser.phoneNumber === ADMIN_PHONE_NUMBER)
           ) {
             determinedRole = 'admin';
-          } else if (currentUser.email && MECHANIC_EMAILS.includes(currentUser.email.toLowerCase())) {
+          } else if (userEmailLower && MECHANIC_EMAILS.includes(userEmailLower)) {
             determinedRole = 'mechanic';
+          } else if (userEmailLower && CUSTOMER_RELATIONS_EMAILS.includes(userEmailLower)) {
+            determinedRole = 'customer_relations';
           }
           setRole(determinedRole);
         } else {
@@ -116,13 +122,14 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
     if (typeof window !== 'undefined') {
       const recaptchaContainer = document.getElementById(elementId);
       if (recaptchaContainer) {
+        // Clear any existing reCAPTCHA instance in the container
         while (recaptchaContainer.firstChild) {
             recaptchaContainer.removeChild(recaptchaContainer.firstChild);
         }
         try {
           const verifier = new RecaptchaVerifier(
             firebaseAuthInstance as FirebaseAuthType, 
-            recaptchaContainer,
+            recaptchaContainer, // Use the container itself, not its ID string after it's found
             {
               'size': 'invisible',
               'callback': () => { /* reCAPTCHA solved */ },
@@ -145,6 +152,7 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
     return null;
   }, [isFirebaseReady, toast]);
 
+
   const signInWithPhoneNumberStep1 = async (phoneNumber: string, appVerifier: RecaptchaVerifier): Promise<ConfirmationResult | null> => {
     if (!firebaseAuthInstance || !isFirebaseReady) {
       toast({ title: "Authentication Error", description: "Firebase not configured. Cannot send OTP.", variant: "destructive" });
@@ -156,7 +164,7 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
       const confirmationResult = await signInWithPhoneNumber(firebaseAuthInstance, phoneNumber, appVerifier);
       toast({ title: "OTP Sent", description: "An OTP has been sent to your phone number." });
       return confirmationResult;
-    } catch (error: any) {      
+    } catch (error: any) {
       console.error("Error sending OTP:", error);
       let errorMessage = "Failed to send OTP. Please check the phone number and try again.";
       if (error.code === 'auth/invalid-phone-number') {
@@ -172,7 +180,8 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
       toast({ title: "Error Sending OTP", description: errorMessage, variant: "destructive" });
       
       try {
-        appVerifier.clear();
+        // Attempt to clear or reset the appVerifier to allow for a fresh reCAPTCHA on next attempt
+        appVerifier.clear(); // This method exists on RecaptchaVerifier instance
       } catch(e) {
         console.warn("Could not clear appVerifier during OTP send error:", e);
       }
@@ -242,4 +251,3 @@ export const useAuth = (): AuthContextType => {
   }
   return context;
 };
-

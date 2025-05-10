@@ -3,11 +3,12 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { ServiceRequest, ServiceProvider, VehicleInfo } from '@/types';
+import type { ServiceRequest, ServiceProvider, VehicleInfo, StaffMember } from '@/types';
 import RequestList from '@/components/garage/RequestList';
+import StaffManagement from '@/components/garage/StaffManagement';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Filter, RefreshCw, Loader2, ShieldAlert, Home, Bell, Inbox } from 'lucide-react';
+import { Filter, RefreshCw, Loader2, ShieldAlert, Home, Bell, Users, WrenchIcon, Briefcase } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -15,11 +16,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
-import { getRequestsFromStorage, saveRequestsToStorage, LOCAL_STORAGE_REQUESTS_KEY } from '@/lib/localStorageUtils';
+import { getRequestsFromStorage, saveRequestsToStorage, LOCAL_STORAGE_REQUESTS_KEY, getStaffMembersFromStorage } from '@/lib/localStorageUtils';
 
 // Mock Data for Garages - this can remain as it's static provider info
 const MOCK_GARAGES: ServiceProvider[] = [
@@ -33,51 +35,54 @@ const MOCK_GARAGES: ServiceProvider[] = [
 
 const DEFAULT_VEHICLE_INFO: VehicleInfo = { make: 'Unknown', model: 'Unknown', year: 'N/A', licensePlate: 'N/A' };
 
-
 export default function GarageAdminPage() {
   const { user, role, loading: authLoading } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
 
   const [requests, setRequests] = useState<ServiceRequest[]>([]);
-  const [isLoadingRequests, setIsLoadingRequests] = useState(true);
+  const [staffMembers, setStaffMembers] = useState<StaffMember[]>([]);
+  const [isLoadingData, setIsLoadingData] = useState(true); // Combined loading state
   const [selectedGarage, setSelectedGarage] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const prevPendingCountRef = useRef<number>(0);
   const initialLoadRef = useRef(true);
 
-
-  const loadRequests = useCallback(() => {
-    setIsLoadingRequests(true);
+  const loadData = useCallback(() => {
+    setIsLoadingData(true);
     const storedRequests = getRequestsFromStorage();
-    // Ensure vehicleInfo has defaults if missing
     const processedRequests = storedRequests.map(r => ({
         ...r,
         vehicleInfo: r.vehicleInfo || DEFAULT_VEHICLE_INFO,
-        requestTime: new Date(r.requestTime) // Ensure requestTime is a Date object
-    })).sort((a, b) => b.requestTime.getTime() - a.requestTime.getTime()); // Sort by most recent
+        requestTime: new Date(r.requestTime)
+    })).sort((a, b) => b.requestTime.getTime() - a.requestTime.getTime());
     setRequests(processedRequests);
-    setIsLoadingRequests(false);
+
+    if (role === 'admin') {
+      const storedStaff = getStaffMembersFromStorage();
+      setStaffMembers(storedStaff);
+    }
+    setIsLoadingData(false);
     return processedRequests;
-  }, []);
+  }, [role]);
   
   useEffect(() => {
     if (!authLoading && !user) {
       router.push('/login?redirect=/garage-admin');
     } else if (user) {
-      const loadedRequests = loadRequests();
-      const currentPendingCount = loadedRequests.filter(req => req.status === 'Pending').length;
-      prevPendingCountRef.current = currentPendingCount; // Initialize prev count on load
-      initialLoadRef.current = false;
+      const loadedRequests = loadData();
+      if (initialLoadRef.current) {
+        const currentPendingCount = loadedRequests.filter(req => req.status === 'Pending').length;
+        prevPendingCountRef.current = currentPendingCount;
+        initialLoadRef.current = false;
+      }
     }
-  }, [authLoading, user, router, loadRequests]);
-
+  }, [authLoading, user, router, loadData]);
 
   useEffect(() => {
-    // Listener for localStorage changes from other tabs/windows (optional, but good for sync)
     const handleStorageChange = (event: StorageEvent) => {
       if (event.key === LOCAL_STORAGE_REQUESTS_KEY) {
-        const newRequests = loadRequests();
+        const newRequests = loadData(); // Reloads both requests and staff if admin
         const currentPendingCount = newRequests.filter(req => req.status === 'Pending').length;
 
         if (currentPendingCount > prevPendingCountRef.current) {
@@ -90,16 +95,15 @@ export default function GarageAdminPage() {
         }
         prevPendingCountRef.current = currentPendingCount;
       }
+      // Could also listen for staff changes if needed for real-time updates from other admin tabs
     };
 
     window.addEventListener('storage', handleStorageChange);
     return () => window.removeEventListener('storage', handleStorageChange);
-  }, [loadRequests, toast]);
+  }, [loadData, toast, role]);
 
-
-  // Notification logic for new requests or changes in pending count
   useEffect(() => {
-    if (initialLoadRef.current || isLoadingRequests) return; // Don't run on initial load until requests are set
+    if (initialLoadRef.current || isLoadingData) return;
 
     const currentPendingRequests = requests.filter(req => req.status === 'Pending');
     const currentPendingCount = currentPendingRequests.length;
@@ -112,57 +116,93 @@ export default function GarageAdminPage() {
         duration: 6000,
       });
     } else if (currentPendingCount < prevPendingCountRef.current && prevPendingCountRef.current > 0) {
-        // This case might be a status change from Pending to something else
         toast({
             title: "ℹ️ Pending Requests Updated",
             description: `Number of pending requests changed from ${prevPendingCountRef.current} to ${currentPendingCount}.`,
             duration: 4000,
         });
     }
-    // Update ref after comparison
     prevPendingCountRef.current = currentPendingCount;
-  }, [requests, toast, isLoadingRequests]);
+  }, [requests, toast, isLoadingData]);
 
-
-  const handleStatusChange = (requestId: string, newStatus: ServiceRequest['status']) => {
-    const updatedRequests = requests.map(req =>
-      req.id === requestId ? { ...req, status: newStatus } : req
-    );
+  const handleStatusChange = (requestId: string, newStatus: ServiceRequest['status'], notes?: string, resources?: string) => {
+    const updatedRequests = requests.map(req => {
+      if (req.id === requestId) {
+        const updatedReq = { ...req, status: newStatus };
+        if (notes !== undefined) updatedReq.mechanicNotes = notes;
+        if (resources !== undefined) updatedReq.resourcesUsed = resources;
+        return updatedReq;
+      }
+      return req;
+    });
     setRequests(updatedRequests);
-    saveRequestsToStorage(updatedRequests); // Save changes to localStorage
+    saveRequestsToStorage(updatedRequests);
     toast({
       title: "Status Updated",
       description: `Request ${requestId.slice(0,10)}... status changed to ${newStatus}.`,
     });
   };
-
-  const filteredRequests = requests.filter(req => {
-    const garageMatch = selectedGarage === 'all' || (req.selectedProvider && req.selectedProvider.id === selectedGarage);
-    const statusMatch = selectedStatus === 'all' || req.status === selectedStatus;
-    return garageMatch && statusMatch;
-  });
   
+  const handleAssignStaff = (requestId: string, staffId: string | null) => {
+    const updatedRequests = requests.map(req =>
+      req.id === requestId ? { ...req, assignedStaffId: staffId || undefined } : req
+    );
+    setRequests(updatedRequests);
+    saveRequestsToStorage(updatedRequests);
+    const staffName = staffMembers.find(s => s.id === staffId)?.name || 'Unassigned';
+    toast({
+      title: "Request Assignment Updated",
+      description: `Request ${requestId.slice(0,10)}... assigned to ${staffName}.`,
+    });
+  };
+
+  const getVisibleRequests = () => {
+    let filtered = requests;
+    if (role === 'mechanic' && user) {
+      // A mechanic sees requests assigned to their staff profile (matched by email)
+      const mechanicStaffProfile = staffMembers.find(staff => staff.email.toLowerCase() === user.email?.toLowerCase() && staff.role === 'mechanic');
+      if (mechanicStaffProfile) {
+        filtered = filtered.filter(req => req.assignedStaffId === mechanicStaffProfile.id);
+      } else {
+        filtered = []; // Not a recognized mechanic staff member or no matching email
+      }
+    } else if (role === 'customer_relations') {
+      // Customer relations might see all active requests or based on other criteria
+      // For now, let's assume they see all non-completed/cancelled, similar to admin filter by default
+      // This can be refined further.
+    }
+
+    // Apply garage and status filters
+    return filtered.filter(req => {
+      const garageMatch = selectedGarage === 'all' || (req.selectedProvider && req.selectedProvider.id === selectedGarage);
+      const statusMatch = selectedStatus === 'all' || req.status === selectedStatus;
+      return garageMatch && statusMatch;
+    });
+  };
+  
+  const visibleRequests = getVisibleRequests();
+
   const refreshData = () => {
-    loadRequests();
+    loadData();
     setSelectedGarage('all');
     setSelectedStatus('all');
     toast({
       title: "Data Refreshed",
-      description: "Request list has been updated from storage.",
+      description: "Request and staff list has been updated from storage.",
       duration: 3000
     });
   }
 
-  if (authLoading || isLoadingRequests && initialLoadRef.current) { // Show loader on initial data load too
+  if (authLoading || (isLoadingData && initialLoadRef.current)) {
     return (
       <div className="flex-grow flex items-center justify-center">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
-        <p className="ml-3">Loading requests...</p>
+        <p className="ml-3">Loading data...</p>
       </div>
     );
   }
 
-  if (!user && !authLoading) { // Redirect if not logged in and auth is done loading
+  if (!user && !authLoading) {
     return (
         <div className="flex-grow flex items-center justify-center">
              <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -171,7 +211,7 @@ export default function GarageAdminPage() {
     );
   }
 
-  if (role !== 'admin' && role !== 'mechanic') {
+  if (role !== 'admin' && role !== 'mechanic' && role !== 'customer_relations') {
     return (
       <div className="flex-grow flex flex-col items-center justify-center text-center p-6">
         <Card className="w-full max-w-md shadow-xl">
@@ -181,7 +221,7 @@ export default function GarageAdminPage() {
             <CardDescription>You do not have permission to view this page.</CardDescription>
           </CardHeader>
           <CardContent>
-            <p>This area is restricted to garage administrators and mechanics.</p>
+            <p>This area is restricted to authorized garage personnel.</p>
           </CardContent>
           <CardFooter>
             <Button asChild className="w-full">
@@ -196,6 +236,7 @@ export default function GarageAdminPage() {
   }
 
   const pendingRequestCount = requests.filter(req => req.status === 'Pending').length;
+  const currentRoleIcon = role === 'admin' ? Users : role === 'mechanic' ? WrenchIcon : Briefcase;
 
   return (
     <div className="flex-grow flex flex-col p-4 md:p-6 space-y-6">
@@ -203,8 +244,11 @@ export default function GarageAdminPage() {
         <CardHeader>
           <div className="flex justify-between items-center">
             <div>
-              <CardTitle className="text-2xl md:text-3xl">Garage Service Requests</CardTitle>
-              <CardDescription>View and manage incoming roadside assistance requests. Logged in as: <span className="font-semibold capitalize">{role}</span></CardDescription>
+              <CardTitle className="text-2xl md:text-3xl flex items-center">
+                 {React.createElement(currentRoleIcon, { className: "mr-3 h-7 w-7 text-primary"})}
+                 Garage Management Portal
+              </CardTitle>
+              <CardDescription>View and manage service operations. Logged in as: <span className="font-semibold capitalize">{role}</span></CardDescription>
             </div>
             {pendingRequestCount > 0 && (
                  <div className="relative">
@@ -217,63 +261,82 @@ export default function GarageAdminPage() {
             )}
           </div>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex flex-col sm:flex-row gap-3 items-center border-b pb-4">
-            <Filter className="h-5 w-5 text-muted-foreground hidden sm:block" />
-            <Select value={selectedGarage} onValueChange={setSelectedGarage}>
-              <SelectTrigger className="w-full sm:w-[200px]">
-                <SelectValue placeholder="Filter by Garage" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Garages</SelectItem>
-                {MOCK_GARAGES.map(g => (
-                  <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-              <SelectTrigger className="w-full sm:w-[200px]">
-                <SelectValue placeholder="Filter by Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Statuses</SelectItem>
-                {(['Pending', 'Accepted', 'In Progress', 'Completed', 'Cancelled'] as ServiceRequest['status'][]).map(s => (
-                  <SelectItem key={s} value={s}>{s}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button onClick={refreshData} variant="outline" className="w-full sm:w-auto sm:ml-auto">
-              <RefreshCw className="mr-2 h-4 w-4" />
-              Refresh
-            </Button>
-          </div>
-           <p className="text-sm text-muted-foreground">
-            Displaying {filteredRequests.length} of {requests.length} requests. 
-            ({pendingRequestCount} pending)
-          </p>
-        </CardContent>
       </Card>
-      
-      {isLoadingRequests && !initialLoadRef.current ? ( // Loader when refreshing non-initially
-        <div className="flex-grow flex items-center justify-center">
-          <Loader2 className="h-10 w-10 animate-spin text-primary" />
-           <p className="ml-3">Refreshing requests...</p>
-        </div>
-      ) : requests.length === 0 ? (
-        <Card className="flex-grow flex flex-col items-center justify-center text-center py-10">
-            <CardContent>
-                <Inbox className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-                <CardTitle className="text-xl">No Service Requests Logged</CardTitle>
-                <CardDescription className="mt-2">There are currently no user-submitted requests.</CardDescription>
+
+      <Tabs defaultValue="requests" className="w-full">
+        <TabsList className="grid w-full grid-cols-1 sm:grid-cols-2 max-w-md">
+          <TabsTrigger value="requests">Service Requests</TabsTrigger>
+          {role === 'admin' && <TabsTrigger value="staff">Staff Management</TabsTrigger>}
+        </TabsList>
+
+        <TabsContent value="requests" className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Current Service Requests</CardTitle>
+              <CardDescription>Filter and manage incoming and ongoing requests.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-col sm:flex-row gap-3 items-center border-b pb-4">
+                <Filter className="h-5 w-5 text-muted-foreground hidden sm:block" />
+                <Select value={selectedGarage} onValueChange={setSelectedGarage}>
+                  <SelectTrigger className="w-full sm:w-[200px]">
+                    <SelectValue placeholder="Filter by Garage Branch" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Garage Branches</SelectItem>
+                    {MOCK_GARAGES.map(g => (
+                      <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+                  <SelectTrigger className="w-full sm:w-[200px]">
+                    <SelectValue placeholder="Filter by Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Statuses</SelectItem>
+                    {(['Pending', 'Accepted', 'In Progress', 'Completed', 'Cancelled'] as ServiceRequest['status'][]).map(s => (
+                      <SelectItem key={s} value={s}>{s}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button onClick={refreshData} variant="outline" className="w-full sm:w-auto sm:ml-auto">
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Refresh Data
+                </Button>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Displaying {visibleRequests.length} of {requests.length} total requests. 
+                ({pendingRequestCount} pending)
+              </p>
+               {isLoadingData && !initialLoadRef.current ? (
+                <div className="flex items-center justify-center py-6">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  <p className="ml-3">Refreshing requests...</p>
+                </div>
+              ) : (
+                <div className="min-h-[300px]"> {/* Ensure list has some height */}
+                 <RequestList 
+                    requests={visibleRequests} 
+                    onStatusChange={handleStatusChange} 
+                    onAssignStaff={role === 'admin' ? handleAssignStaff : undefined}
+                    staffList={staffMembers.filter(s => s.role === 'mechanic')} // Pass only mechanics for assignment
+                    currentUserRole={role}
+                    currentUserId={user?.uid} // Or email, depending on how you identify mechanics
+                    currentUserEmail={user?.email}
+                  />
+                </div>
+              )}
             </CardContent>
-        </Card>
-      ) : (
-        <div className="flex-grow flex flex-col min-h-0">
-         <RequestList requests={filteredRequests} onStatusChange={handleStatusChange} />
-        </div>
-      )}
-      
+          </Card>
+        </TabsContent>
+
+        {role === 'admin' && (
+          <TabsContent value="staff" className="mt-6">
+            <StaffManagement />
+          </TabsContent>
+        )}
+      </Tabs>
     </div>
   );
 }
-

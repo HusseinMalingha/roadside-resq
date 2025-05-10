@@ -3,7 +3,7 @@
 "use client";
 
 import type { FC } from 'react';
-import type { ServiceRequest } from '@/types';
+import type { ServiceRequest, StaffMember, UserRole } from '@/types';
 import RequestCard from './RequestCard';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -11,17 +11,30 @@ import { Inbox } from 'lucide-react';
 
 interface RequestListProps {
   requests: ServiceRequest[];
-  onStatusChange: (requestId: string, newStatus: ServiceRequest['status']) => void;
+  onStatusChange: (requestId: string, newStatus: ServiceRequest['status'], mechanicNotes?: string, resourcesUsed?: string) => void;
+  onAssignStaff?: (requestId: string, staffId: string | null) => void; // For admin
+  staffList: StaffMember[]; // Full staff list, RequestCard will filter if needed
+  currentUserRole: UserRole;
+  currentUserId?: string; // Firebase UID of logged in user
+  currentUserEmail?: string; // Firebase Email of logged in user
 }
 
-const RequestList: FC<RequestListProps> = ({ requests, onStatusChange }) => {
+const RequestList: FC<RequestListProps> = ({ 
+    requests, 
+    onStatusChange, 
+    onAssignStaff, 
+    staffList, 
+    currentUserRole, 
+    currentUserId,
+    currentUserEmail
+}) => {
   if (requests.length === 0) {
     return (
       <Alert className="mt-6">
         <Inbox className="h-5 w-5" />
-        <AlertTitle>No Active Requests</AlertTitle>
+        <AlertTitle>No Service Requests</AlertTitle>
         <AlertDescription>
-          There are currently no service requests matching your filters.
+          There are currently no service requests matching your filters or assignments.
         </AlertDescription>
       </Alert>
     );
@@ -31,7 +44,16 @@ const RequestList: FC<RequestListProps> = ({ requests, onStatusChange }) => {
     <ScrollArea className="h-full w-full pr-3"> {/* Changed height to h-full */}
       <div className="space-y-4">
         {requests.map((request) => (
-          <RequestCard key={request.id} request={request} onStatusChange={onStatusChange} />
+          <RequestCard 
+            key={request.id} 
+            request={request} 
+            onStatusChange={onStatusChange} 
+            onAssignStaff={onAssignStaff}
+            staffList={staffList}
+            currentUserRole={currentUserRole}
+            currentUserId={currentUserId}
+            currentUserEmail={currentUserEmail}
+          />
         ))}
       </div>
     </ScrollArea>
@@ -39,5 +61,3 @@ const RequestList: FC<RequestListProps> = ({ requests, onStatusChange }) => {
 };
 
 export default RequestList;
-
-    
