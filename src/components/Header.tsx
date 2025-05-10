@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/tooltip"
 
 const Header = () => {
-  const { user, loading, signOut, isFirebaseReady } = useAuth(); 
+  const { user, role, loading, signOut, isFirebaseReady } = useAuth(); 
 
   const getInitials = (name?: string | null) => {
     if (!name) return 'RQ'; // Updated for ResQ
@@ -32,6 +32,8 @@ const Header = () => {
     }
     return name.substring(0, 2).toUpperCase();
   };
+
+  const canViewMyRequests = role === 'user' || (user && !role); // Show for 'user' role or if logged in and no specific staff/admin role
 
   return (
     <header className="bg-primary text-primary-foreground shadow-lg sticky top-0 z-50">
@@ -72,13 +74,15 @@ const Header = () => {
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem asChild className="cursor-pointer">
-                  <Link href="/my-requests">
-                    <History className="mr-2 h-4 w-4" />
-                    My Requests
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
+                {canViewMyRequests && (
+                  <DropdownMenuItem asChild className="cursor-pointer">
+                    <Link href="/my-requests">
+                      <History className="mr-2 h-4 w-4" />
+                      My Requests
+                    </Link>
+                  </DropdownMenuItem>
+                )}
+                {canViewMyRequests && <DropdownMenuSeparator />}
                 <DropdownMenuItem onClick={signOut} className="cursor-pointer" disabled={!isFirebaseReady}>
                   <LogOut className="mr-2 h-4 w-4" />
                   <span>Log out</span>
@@ -113,3 +117,4 @@ const Header = () => {
 };
 
 export default Header;
+
