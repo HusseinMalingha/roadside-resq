@@ -2,7 +2,7 @@
 // src/app/garage-admin/page.tsx
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { ServiceRequest, ServiceProvider, VehicleInfo, StaffMember } from '@/types';
 import RequestList from '@/components/garage/RequestList';
 import StaffManagement from '@/components/garage/StaffManagement';
@@ -340,3 +340,4 @@ export default function GarageAdminPage() {
     </div>
   );
 }
+
