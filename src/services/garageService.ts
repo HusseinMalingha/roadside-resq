@@ -1,12 +1,9 @@
 
-import { db, collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc, query, where, onSnapshot, Timestamp } from '@/lib/firebase';
 import type { ServiceProvider, Location } from '@/types';
 
-const GARAGES_COLLECTION = 'garages';
+const LOCAL_STORAGE_GARAGES_KEY = 'resqGarages';
 
-// Initial default AutoXpress garage data - can be used for seeding if needed, but app relies on admin to add
 const INITIAL_MOCK_PROVIDERS: ServiceProvider[] = [
-  // Kampala Area
   { 
     id: 'ax-kampala-central', 
     name: 'Auto Xpress - Kampala Central', 
@@ -25,91 +22,109 @@ const INITIAL_MOCK_PROVIDERS: ServiceProvider[] = [
     generalLocation: "Lugogo (U-Save, Next to Forest Mall)",
     servicesOffered: ['Suspension Work', 'Diagnostics', 'Tire Alignment', 'Jump Start', 'Engine failure', 'Car Wash'] 
   },
-  // ... (include other initial providers if you want to seed them, or remove this array if fully relying on admin input)
+   {
+    id: 'ax-entebbe',
+    name: 'Auto Xpress - Entebbe',
+    phone: '(256) 772-345678',
+    etaMinutes: 45,
+    currentLocation: { lat: 0.0476, lng: 32.4606 },
+    generalLocation: "Entebbe Town (Shell Petrol Station)",
+    servicesOffered: ['Tire Services', 'Battery Check', 'Oil Top-up', 'Flat tire']
+  },
+  {
+    id: 'ax-mukono',
+    name: 'Auto Xpress - Mukono',
+    phone: '(256) 772-456789',
+    etaMinutes: 60,
+    currentLocation: { lat: 0.3550, lng: 32.7500 },
+    generalLocation: "Mukono (Near Total Petrol Station)",
+    servicesOffered: ['General Repair', 'Tire Puncture', 'Jump Start', 'Engine failure']
+  },
+  {
+    id: 'ax-jinja',
+    name: 'Auto Xpress - Jinja',
+    phone: '(256) 772-567890',
+    etaMinutes: 90,
+    currentLocation: { lat: 0.4322, lng: 33.2040 },
+    generalLocation: "Jinja Town (Main Street)",
+    servicesOffered: ['Full Service', 'Tire Replacement', 'Battery Replacement', 'Vehicle Diagnostics']
+  },
+  {
+    id: 'ax-mbarara',
+    name: 'Auto Xpress - Mbarara',
+    phone: '(256) 772-678901',
+    etaMinutes: 180,
+    currentLocation: { lat: -0.6070, lng: 30.6500 },
+    generalLocation: "Mbarara Town (High Street)",
+    servicesOffered: ['Major Repairs', 'Tire Services', 'Oil Change', 'Dead battery']
+  }
 ];
 
+const getAllLocalGarages = (): ServiceProvider[] => {
+  if (typeof window === 'undefined') return [...INITIAL_MOCK_PROVIDERS];
+  const garagesJson = localStorage.getItem(LOCAL_STORAGE_GARAGES_KEY);
+  if (garagesJson) {
+    return JSON.parse(garagesJson);
+  }
+  // If nothing in local storage, seed with initial mock providers
+  localStorage.setItem(LOCAL_STORAGE_GARAGES_KEY, JSON.stringify(INITIAL_MOCK_PROVIDERS));
+  return [...INITIAL_MOCK_PROVIDERS];
+};
+
+const saveAllLocalGarages = (garages: ServiceProvider[]): void => {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(LOCAL_STORAGE_GARAGES_KEY, JSON.stringify(garages));
+};
 
 export const getAllGarages = async (): Promise<ServiceProvider[]> => {
-  if (!db) {
-    console.error("Firestore is not initialized.");
-    return [];
-  }
-  try {
-    const garagesCollectionRef = collection(db, GARAGES_COLLECTION);
-    const garageSnapshot = await getDocs(garagesCollectionRef);
-    if (garageSnapshot.empty && process.env.NODE_ENV === 'development') {
-      // Optional: Seed initial data in development if collection is empty
-      // console.log("No garages found in Firestore. Seeding initial mock providers for development.");
-      // for (const provider of INITIAL_MOCK_PROVIDERS) {
-      //   // Use provider.id as document ID if it's unique and you want to control it
-      //   // Otherwise, let Firestore generate IDs by using addDoc
-      //   const docRef = doc(db, GARAGES_COLLECTION, provider.id);
-      //   await setDoc(docRef, provider);
-      // }
-      // const seededSnapshot = await getDocs(garagesCollectionRef);
-      // return seededSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ServiceProvider));
-      return []; // Return empty if not seeding or not in dev
-    }
-    return garageSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ServiceProvider));
-  } catch (error) {
-    console.error("Error fetching all garages:", error);
-    throw error;
-  }
+  return Promise.resolve(getAllLocalGarages());
 };
 
 export const addGarage = async (garageData: Omit<ServiceProvider, 'id' | 'distanceKm'>): Promise<ServiceProvider> => {
-  if (!db) {
-    console.error("Firestore is not initialized.");
-    throw new Error("Firestore not initialized");
-  }
-  try {
-    const docRef = await addDoc(collection(db, GARAGES_COLLECTION), garageData);
-    return { id: docRef.id, ...garageData };
-  } catch (error) {
-    console.error("Error adding garage:", error);
-    throw error;
-  }
+  const allGarages = getAllLocalGarages();
+  const newGarage: ServiceProvider = {
+    ...garageData,
+    id: `local-garage-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+  };
+  allGarages.push(newGarage);
+  saveAllLocalGarages(allGarages);
+  return Promise.resolve(newGarage);
 };
 
 export const updateGarage = async (garageId: string, garageData: Partial<Omit<ServiceProvider, 'id' | 'distanceKm'>>): Promise<void> => {
-  if (!db) {
-    console.error("Firestore is not initialized.");
-    return;
+  let allGarages = getAllLocalGarages();
+  const garageIndex = allGarages.findIndex(g => g.id === garageId);
+  if (garageIndex !== -1) {
+    allGarages[garageIndex] = { ...allGarages[garageIndex], ...garageData, id: garageId };
+    saveAllLocalGarages(allGarages);
+  } else {
+    console.warn(`Garage with ID ${garageId} not found in localStorage for update.`);
   }
-  try {
-    const garageDocRef = doc(db, GARAGES_COLLECTION, garageId);
-    await updateDoc(garageDocRef, garageData);
-  } catch (error) {
-    console.error("Error updating garage:", error);
-    throw error;
-  }
+  return Promise.resolve();
 };
 
 export const deleteGarage = async (garageId: string): Promise<void> => {
-  if (!db) {
-    console.error("Firestore is not initialized.");
-    return;
-  }
-  try {
-    const garageDocRef = doc(db, GARAGES_COLLECTION, garageId);
-    await deleteDoc(garageDocRef);
-  } catch (error) {
-    console.error("Error deleting garage:", error);
-    throw error;
-  }
+  let allGarages = getAllLocalGarages();
+  allGarages = allGarages.filter(g => g.id !== garageId);
+  saveAllLocalGarages(allGarages);
+  return Promise.resolve();
 };
 
 export const listenToGarages = (callback: (garages: ServiceProvider[]) => void): (() => void) => {
-   if (!db) {
-    console.error("Firestore is not initialized. Cannot listen to garages.");
-    return () => {}; 
+  const currentGarages = getAllLocalGarages();
+  callback(currentGarages);
+
+  const storageListener = (event: StorageEvent) => {
+    if (event.key === LOCAL_STORAGE_GARAGES_KEY) {
+      callback(getAllLocalGarages());
+    }
+  };
+  if (typeof window !== 'undefined') {
+    window.addEventListener('storage', storageListener);
   }
-  const garagesCollectionRef = collection(db, GARAGES_COLLECTION);
-  const unsubscribe = onSnapshot(garagesCollectionRef, (snapshot) => {
-    const garageList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ServiceProvider));
-    callback(garageList);
-  }, (error) => {
-    console.error("Error listening to garages:", error);
-  });
-  return unsubscribe;
+  return () => {
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('storage', storageListener);
+    }
+  };
 };

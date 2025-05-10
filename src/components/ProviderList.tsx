@@ -10,13 +10,37 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { SearchX, Loader2, ListFilter, MapPinned } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { getAllGarages } from '@/services/garageService'; // Import Firestore service
+// import { getAllGarages } from '@/services/garageService'; // Firestore service removed
 
 interface ProviderListProps {
   userLocation: UserLocationType | null;
   issueType: string;
   onSelectProvider: (provider: ServiceProvider) => void;
+  staticProviders?: ServiceProvider[]; // Accept a static list
 }
+
+// Default static providers if none are passed via props
+const DEFAULT_STATIC_PROVIDERS: ServiceProvider[] = [
+  { 
+    id: 'ax-kampala-central', 
+    name: 'Auto Xpress - Kampala Central', 
+    phone: '(256) 772-123456', 
+    etaMinutes: 15, 
+    currentLocation: { lat: 0.3136, lng: 32.5811 }, 
+    generalLocation: "Kampala Central",
+    servicesOffered: ['Tire Services', 'Battery Replacement', 'Oil Change', 'Flat tire'] 
+  },
+  { 
+    id: 'ax-lugogo', 
+    name: 'Auto Xpress - Lugogo', 
+    phone: '(256) 772-234567', 
+    etaMinutes: 20, 
+    currentLocation: { lat: 0.3270, lng: 32.5990 }, 
+    generalLocation: "Lugogo",
+    servicesOffered: ['Diagnostics', 'Tire Alignment', 'Jump Start', 'Engine failure'] 
+  },
+];
+
 
 function calculateDistance(loc1: UserLocationType, loc2: UserLocationType): number {
   const R = 6371; // Radius of the Earth in km
@@ -30,39 +54,21 @@ function calculateDistance(loc1: UserLocationType, loc2: UserLocationType): numb
   return R * c;
 }
 
-const ProviderList: FC<ProviderListProps> = ({ userLocation, issueType, onSelectProvider }) => {
-  const [isLoading, setIsLoading] = useState(true);
-  const [allProviders, setAllProviders] = useState<ServiceProvider[]>([]);
+const ProviderList: FC<ProviderListProps> = ({ userLocation, issueType, onSelectProvider, staticProviders }) => {
+  const [isLoading, setIsLoading] = useState(false); // No initial loading from DB
+  const [allProviders, setAllProviders] = useState<ServiceProvider[]>(staticProviders || DEFAULT_STATIC_PROVIDERS);
   const [displayedProviders, setDisplayedProviders] = useState<ServiceProvider[]>([]);
   const [noSpecificMatch, setNoSpecificMatch] = useState(false);
 
   useEffect(() => {
-    const fetchAndSetProviders = async () => {
-      setIsLoading(true);
-      try {
-        const garages = await getAllGarages();
-        setAllProviders(garages);
-      } catch (error) {
-        console.error("Error fetching garages for ProviderList:", error);
-        setAllProviders([]); // Set to empty array on error
-      } finally {
-        setIsLoading(false); // Set loading to false after initial fetch attempt
-      }
-    };
-    fetchAndSetProviders();
-  }, []); // Fetch only once on mount
+    // Use the provided staticProviders or fallback to default
+    setAllProviders(staticProviders || DEFAULT_STATIC_PROVIDERS);
+    setIsLoading(false); // Data is available immediately
+  }, [staticProviders]);
 
 
   useEffect(() => {
-    // This effect runs when allProviders, userLocation, or issueType changes,
-    // but only processes if allProviders is populated and not currently loading them.
-    if (allProviders.length === 0 && !isLoading) { // If no providers and not loading, nothing to do
-      setDisplayedProviders([]);
-      setIsLoading(false); // Ensure loading is false if it was true due to initial empty allProviders
-      return;
-    }
-    if (isLoading) return; // Don't process if initial load of allProviders is still happening
-
+    if (isLoading) return; 
 
     setNoSpecificMatch(false);
     let primaryFilteredProviders = [...allProviders]; 
@@ -98,14 +104,13 @@ const ProviderList: FC<ProviderListProps> = ({ userLocation, issueType, onSelect
       }
       setDisplayedProviders(fallbackProviders);
     }
-    // No need to setIsLoading(false) here as it's handled by the fetch effect
-  }, [userLocation, issueType, allProviders, isLoading]); // isLoading is key here
+  }, [userLocation, issueType, allProviders, isLoading]); 
 
-  if (isLoading && displayedProviders.length === 0) {
+  if (isLoading && displayedProviders.length === 0) { // Should not happen often with static data
     return (
       <div className="flex flex-col items-center justify-center p-10 text-muted-foreground w-full flex-grow">
         <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
-        <p className="text-lg font-medium">Finding Auto Xpress garages...</p>
+        <p className="text-lg font-medium">Loading providers...</p>
         <p className="text-sm">Please wait a moment.</p>
       </div>
     );
@@ -116,16 +121,16 @@ const ProviderList: FC<ProviderListProps> = ({ userLocation, issueType, onSelect
       <CardHeader className="flex-shrink-0">
         <CardTitle className="text-2xl flex items-center">
             <ListFilter className="mr-2 h-6 w-6 text-primary"/>
-            Available Auto Xpress Garages
+            Available Service Providers
         </CardTitle>
         {noSpecificMatch ? (
            <CardDescription className="text-sm">
-            No Auto Xpress garages specifically listed for "{issueType || 'your issue'}" {userLocation ? 'nearby' : ''}. 
-            Showing all available garages. You can check towns like Kampala, Entebbe, Mukono, Jinja, or Mbarara.
+            No providers specifically listed for "{issueType || 'your issue'}" {userLocation ? 'nearby' : ''}. 
+            Showing all available providers.
           </CardDescription>
         ) : (
           <CardDescription className="text-sm">
-            Showing Auto Xpress garages {issueType ? `that can handle "${issueType}"` : ''} {userLocation ? 'sorted by distance.' : 'sorted by estimated arrival time.'}
+            Showing providers {issueType ? `that can handle "${issueType}"` : ''} {userLocation ? 'sorted by distance.' : 'sorted by estimated arrival time.'}
           </CardDescription>
         )}
          {userLocation && (
@@ -138,10 +143,9 @@ const ProviderList: FC<ProviderListProps> = ({ userLocation, issueType, onSelect
         {displayedProviders.length === 0 && !isLoading ? (
             <Alert variant="default" className="mt-4">
               <SearchX className="h-5 w-5" />
-              <AlertTitle className="font-semibold">No Auto Xpress Garages Found</AlertTitle>
+              <AlertTitle className="font-semibold">No Providers Found</AlertTitle>
               <AlertDescription>
-                Unfortunately, we couldn't find any Auto Xpress garages at this time matching your criteria. 
-                Please try broadening your search or check back later. Admins can add more garages in the portal.
+                Unfortunately, we couldn't find any providers at this time matching your criteria.
               </AlertDescription>
             </Alert>
         ) : (

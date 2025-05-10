@@ -1,120 +1,105 @@
 
-import { db, collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc, query, where, orderBy, onSnapshot, Timestamp } from '@/lib/firebase';
 import type { ServiceRequest, Location, VehicleInfo, ServiceProvider } from '@/types';
 
-const REQUESTS_COLLECTION = 'serviceRequests';
+const LOCAL_STORAGE_REQUESTS_KEY = 'resqServiceRequests';
 
-// Helper to convert Firestore Timestamps to Date objects for a single request
-const processRequestDoc = (docSnap: any): ServiceRequest => {
-  const data = docSnap.data();
-  return {
-    id: docSnap.id,
-    ...data,
-    requestTime: (data.requestTime as Timestamp).toDate(),
-    // Ensure nested objects like vehicleInfo and selectedProvider are correctly structured
-    vehicleInfo: data.vehicleInfo || { make: 'Unknown', model: 'Unknown', year: 'N/A', licensePlate: 'N/A' },
-    selectedProvider: data.selectedProvider || { id: 'unknown', name: 'Unknown Provider', phone: 'N/A', etaMinutes: 0, currentLocation: {lat:0,lng:0}, generalLocation: 'Unknown', servicesOffered:[]},
-  } as ServiceRequest;
+// Helper to get all requests from local storage
+const getAllLocalRequests = (): ServiceRequest[] => {
+  if (typeof window === 'undefined') return [];
+  const requestsJson = localStorage.getItem(LOCAL_STORAGE_REQUESTS_KEY);
+  return requestsJson ? JSON.parse(requestsJson) : [];
 };
 
+// Helper to save all requests to local storage
+const saveAllLocalRequests = (requests: ServiceRequest[]): void => {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(LOCAL_STORAGE_REQUESTS_KEY, JSON.stringify(requests));
+};
 
 export const getAllRequests = async (): Promise<ServiceRequest[]> => {
-  if (!db) {
-    console.error("Firestore is not initialized.");
-    return [];
-  }
-  try {
-    const q = query(collection(db, REQUESTS_COLLECTION), orderBy("requestTime", "desc"));
-    const requestSnapshot = await getDocs(q);
-    return requestSnapshot.docs.map(processRequestDoc);
-  } catch (error) {
-    console.error("Error fetching all requests:", error);
-    throw error;
-  }
+  // Simulates async behavior, though localStorage is synchronous
+  return Promise.resolve(getAllLocalRequests().sort((a,b) => new Date(b.requestTime).getTime() - new Date(a.requestTime).getTime()));
 };
 
 export const getUserRequests = async (userId: string): Promise<ServiceRequest[]> => {
-  if (!db) {
-    console.error("Firestore is not initialized.");
-    return [];
-  }
-  try {
-    const q = query(
-      collection(db, REQUESTS_COLLECTION),
-      where("userId", "==", userId),
-      orderBy("requestTime", "desc")
-    );
-    const requestSnapshot = await getDocs(q);
-    return requestSnapshot.docs.map(processRequestDoc);
-  } catch (error) {
-    console.error("Error fetching user requests:", error);
-    throw error;
-  }
-}
+  const allRequests = getAllLocalRequests();
+  return Promise.resolve(
+    allRequests
+      .filter(req => req.userId === userId)
+      .sort((a,b) => new Date(b.requestTime).getTime() - new Date(a.requestTime).getTime())
+  );
+};
 
 export const addServiceRequest = async (requestData: Omit<ServiceRequest, 'id' | 'requestTime'> & { requestTime: Date }): Promise<ServiceRequest> => {
-  if (!db) {
-    console.error("Firestore is not initialized.");
-    throw new Error("Firestore not initialized");
-  }
-  try {
-    const dataToSave = {
-      ...requestData,
-      requestTime: Timestamp.fromDate(requestData.requestTime), // Convert Date to Firestore Timestamp
-    };
-    const docRef = await addDoc(collection(db, REQUESTS_COLLECTION), dataToSave);
-    // Return the full request object including the generated ID and original Date object for requestTime
-    return { ...requestData, id: docRef.id }; 
-  } catch (error) {
-    console.error("Error adding service request:", error);
-    throw error;
-  }
+  const allRequests = getAllLocalRequests();
+  const newRequest: ServiceRequest = {
+    ...requestData,
+    id: `local-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`, // Generate a local ID
+    requestTime: new Date(requestData.requestTime), // Ensure it's a Date object
+  };
+  allRequests.push(newRequest);
+  saveAllLocalRequests(allRequests);
+  return Promise.resolve(newRequest);
 };
 
 export const updateServiceRequest = async (requestId: string, requestData: Partial<Omit<ServiceRequest, 'id' | 'requestTime'>>): Promise<void> => {
-  if (!db) {
-    console.error("Firestore is not initialized.");
-    return;
+  let allRequests = getAllLocalRequests();
+  const requestIndex = allRequests.findIndex(req => req.id === requestId);
+  if (requestIndex !== -1) {
+    allRequests[requestIndex] = { ...allRequests[requestIndex], ...requestData };
+    saveAllLocalRequests(allRequests);
+  } else {
+    console.warn(`Request with ID ${requestId} not found in localStorage for update.`);
   }
-  try {
-    const requestDocRef = doc(db, REQUESTS_COLLECTION, requestId);
-    await updateDoc(requestDocRef, requestData);
-  } catch (error) {
-    console.error("Error updating service request:", error);
-    throw error;
-  }
+  return Promise.resolve();
 };
 
+// Real-time listeners are not feasible with localStorage in the same way as Firestore.
+// These functions are now stubs or will trigger a manual re-fetch if components need to update.
+// For a true reactive system with localStorage, custom event emitters or a state management library would be needed.
 
 export const listenToRequests = (callback: (requests: ServiceRequest[]) => void): (() => void) => {
-  if (!db) {
-    console.error("Firestore is not initialized. Cannot listen to requests.");
-    return () => {}; 
+  // This will just provide the current snapshot. No real-time updates.
+  const currentRequests = getAllLocalRequests().sort((a,b) => new Date(b.requestTime).getTime() - new Date(a.requestTime).getTime());
+  callback(currentRequests);
+  
+  // To somewhat simulate, you could listen to storage events, but it's limited.
+  const storageListener = (event: StorageEvent) => {
+    if (event.key === LOCAL_STORAGE_REQUESTS_KEY) {
+      const updatedRequests = getAllLocalRequests().sort((a,b) => new Date(b.requestTime).getTime() - new Date(a.requestTime).getTime());
+      callback(updatedRequests);
+    }
+  };
+  if (typeof window !== 'undefined') {
+    window.addEventListener('storage', storageListener);
   }
-  const q = query(collection(db, REQUESTS_COLLECTION), orderBy("requestTime", "desc"));
-  const unsubscribe = onSnapshot(q, (snapshot) => {
-    const requestList = snapshot.docs.map(processRequestDoc);
-    callback(requestList);
-  }, (error) => {
-    console.error("Error listening to requests:", error);
-  });
-  return unsubscribe;
+
+  return () => {
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('storage', storageListener);
+    }
+  };
 };
 
 export const listenToRequestById = (requestId: string, callback: (request: ServiceRequest | null) => void): (() => void) => {
-  if (!db) {
-    console.error("Firestore is not initialized. Cannot listen to request by ID.");
-    return () => {};
-  }
-  const requestDocRef = doc(db, REQUESTS_COLLECTION, requestId);
-  const unsubscribe = onSnapshot(requestDocRef, (docSnap) => {
-    if (docSnap.exists()) {
-      callback(processRequestDoc(docSnap));
-    } else {
-      callback(null);
+  const allRequests = getAllLocalRequests();
+  const request = allRequests.find(req => req.id === requestId) || null;
+  callback(request);
+
+  const storageListener = (event: StorageEvent) => {
+    if (event.key === LOCAL_STORAGE_REQUESTS_KEY) {
+      const updatedRequests = getAllLocalRequests();
+      const updatedRequest = updatedRequests.find(req => req.id === requestId) || null;
+      callback(updatedRequest);
     }
-  }, (error) => {
-    console.error(`Error listening to request ${requestId}:`, error);
-  });
-  return unsubscribe;
+  };
+    if (typeof window !== 'undefined') {
+    window.addEventListener('storage', storageListener);
+  }
+
+  return () => {
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('storage', storageListener);
+    }
+  };
 };

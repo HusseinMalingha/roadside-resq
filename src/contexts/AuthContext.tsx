@@ -1,3 +1,4 @@
+
 "use client";
 
 import type { ReactNode, FC } from 'react';
@@ -13,11 +14,12 @@ import {
   type ConfirmationResult, 
   onAuthStateChanged,
   type FirebaseAuthType,
-  db as firestoreInstance // Import db instance
+  // db as firestoreInstance // Removed Firestore instance import
 } from '@/lib/firebase'; 
+// import { getStaffMemberByEmail } from '@/services/staffService'; // Removed staffService import
 import { useRouter } from 'next/navigation';
 import { useToast } from "@/hooks/use-toast";
-import { getStaffMemberByEmail } from '@/services/staffService'; // Import Firestore service
+
 
 export type UserRole = 'admin' | 'mechanic' | 'customer_relations' | 'user' | null;
 
@@ -47,7 +49,8 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
   const { toast } = useToast();
 
   useEffect(() => {
-    if (firebaseAuthInstance && firestoreInstance) {
+    // Check only for firebaseAuthInstance as Firestore is removed
+    if (firebaseAuthInstance) {
       setIsFirebaseReady(true);
       const unsubscribe = onAuthStateChanged(firebaseAuthInstance, async (currentUser) => {
         setUser(currentUser);
@@ -60,17 +63,18 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
             (currentUser.phoneNumber && currentUser.phoneNumber === ADMIN_PHONE_NUMBER)
           ) {
             determinedRole = 'admin';
-          } else if (userEmailLower) {
-            try {
-              const staffProfile = await getStaffMemberByEmail(userEmailLower);
-              if (staffProfile && (staffProfile.role === 'mechanic' || staffProfile.role === 'customer_relations')) {
-                determinedRole = staffProfile.role;
-              }
-            } catch (error) {
-              console.error("Error fetching staff role from Firestore:", error);
-              // Keep default 'user' role or handle error as appropriate
-            }
-          }
+          } 
+          // Removed Firestore-based staff role lookup
+          // else if (userEmailLower) {
+          //   try {
+          //     // const staffProfile = await getStaffMemberByEmail(userEmailLower);
+          //     // if (staffProfile && (staffProfile.role === 'mechanic' || staffProfile.role === 'customer_relations')) {
+          //     //   determinedRole = staffProfile.role;
+          //     // }
+          //   } catch (error) {
+          //     console.error("Error fetching staff role (local storage simulation):", error);
+          //   }
+          // }
           setRole(determinedRole);
         } else {
           setRole(null);
@@ -80,19 +84,19 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
       return () => unsubscribe();
     } else {
       setIsFirebaseReady(false);
-      setLoading(false); // Ensure loading is false if Firebase isn't ready
+      setLoading(false); 
       if (typeof window !== 'undefined') {
         toast({
-          title: "Firebase Not Configured",
-          description: "Authentication or Database services are unavailable. Please check environment variables.",
+          title: "Firebase Auth Not Configured",
+          description: "Authentication services are unavailable. Please check environment variables.",
           variant: "destructive",
           duration: 10000,
         });
       }
-      console.warn("AuthContext: Firebase auth or Firestore instance is not available. Auth features will be disabled.");
+      console.warn("AuthContext: Firebase auth instance is not available. Auth features will be disabled.");
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Empty dependency array: run once on mount
+  }, []); 
 
   const signInWithGoogle = async () => {
     if (!firebaseAuthInstance || !isFirebaseReady) {
@@ -122,7 +126,7 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
     if (typeof window !== 'undefined') {
       const recaptchaContainer = document.getElementById(elementId);
       if (recaptchaContainer) {
-        // Ensure container is empty before rendering new verifier
+        
         while (recaptchaContainer.firstChild) {
             recaptchaContainer.removeChild(recaptchaContainer.firstChild);
         }
@@ -180,8 +184,7 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
       toast({ title: "Error Sending OTP", description: errorMessage, variant: "destructive" });
       
       try {
-        // Attempt to clear the verifier if it exists and has a clear method.
-        // @ts-ignore Property 'clear' does not exist on type 'RecaptchaVerifier'. It's an internal method.
+        // @ts-ignore 
         if (appVerifier && typeof appVerifier.clear === 'function') appVerifier.clear(); 
       } catch(e) {
         console.warn("Could not clear appVerifier during OTP send error:", e);

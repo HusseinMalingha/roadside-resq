@@ -14,23 +14,7 @@ import {
   type Auth as FirebaseAuthType,
   type ConfirmationResult 
 } from 'firebase/auth';
-import { 
-  getFirestore, 
-  collection, 
-  doc, 
-  getDoc, 
-  getDocs, 
-  setDoc, 
-  addDoc, 
-  updateDoc, 
-  deleteDoc, 
-  query, 
-  where, 
-  orderBy, 
-  onSnapshot,
-  Timestamp,
-  type Firestore
-} from 'firebase/firestore';
+// Firestore related imports are removed
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -44,7 +28,7 @@ const firebaseConfig = {
 
 let app: FirebaseApp | null = null;
 let authInstance: FirebaseAuthType | null = null;
-let dbInstance: Firestore | null = null;
+// let dbInstance: Firestore | null = null; // Firestore instance removed
 
 const allConfigValuesPresent =
   firebaseConfig.apiKey &&
@@ -60,8 +44,8 @@ if (typeof window !== 'undefined') {
       try {
         app = initializeApp(firebaseConfig);
         authInstance = getAuth(app);
-        dbInstance = getFirestore(app);
-        console.log("Firebase initialized successfully with Auth and Firestore.");
+        // dbInstance = getFirestore(app); // Firestore initialization removed
+        console.log("Firebase initialized successfully with Auth.");
       } catch (e) {
         console.error("Error initializing Firebase app:", e);
       }
@@ -74,7 +58,7 @@ if (typeof window !== 'undefined') {
     app = getApp(); 
     if (app) { 
         authInstance = getAuth(app); 
-        dbInstance = getFirestore(app);
+        // dbInstance = getFirestore(app); // Firestore retrieval removed
     } else {
         console.error("Firebase app was expected to be initialized but is null.");
     }
@@ -83,7 +67,7 @@ if (typeof window !== 'undefined') {
 
 export const firebaseApp = app;
 export const auth = authInstance; 
-export const db = dbInstance; // Export Firestore instance
+export const db = null; // Export null for db as Firestore is removed
 
 export {
   GoogleAuthProvider,
@@ -93,22 +77,12 @@ export {
   signInWithPhoneNumber,
   onAuthStateChanged,
   signOut,
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  setDoc,
-  addDoc,
-  updateDoc,
-  deleteDoc,
-  query,
-  where,
-  orderBy,
-  onSnapshot,
-  Timestamp,
+  // Firestore related exports are removed (collection, doc, getDoc, etc.)
+  // Timestamp, // Timestamp is a Firestore type, remove if not used elsewhere
   type NextOrObserver,
   type User,
   type FirebaseAuthType,
-  type ConfirmationResult,
-  type Firestore
+  type ConfirmationResult
+  // type Firestore // Firestore type removed
 };
+

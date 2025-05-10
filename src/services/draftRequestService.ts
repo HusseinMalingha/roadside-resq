@@ -1,64 +1,57 @@
 
-import { db, doc, getDoc, setDoc, deleteDoc, Timestamp } from '@/lib/firebase';
+// import { db, doc, getDoc, setDoc, deleteDoc, Timestamp } from '@/lib/firebase'; // Firebase imports removed
 import type { DraftServiceRequestData, Location, VehicleInfo } from '@/types';
 
-const DRAFT_REQUESTS_COLLECTION = 'userDraftRequests';
+const LOCAL_STORAGE_DRAFT_KEY_PREFIX = 'resqDraftRequest_';
 
-// Helper to convert Firestore Timestamps to Date objects for a draft request
-const processDraftRequestDoc = (docSnap: any): DraftServiceRequestData | null => {
-  if (!docSnap.exists()) return null;
-  const data = docSnap.data();
-  return {
-    ...data,
-    lastUpdated: data.lastUpdated ? (data.lastUpdated as Timestamp).toDate() : undefined,
-  } as DraftServiceRequestData;
-};
+// Helper to get the user-specific key
+const getUserDraftKey = (userId: string): string => `${LOCAL_STORAGE_DRAFT_KEY_PREFIX}${userId}`;
 
 export const getDraftRequest = async (userId: string): Promise<DraftServiceRequestData | null> => {
-  if (!db) {
-    console.error("Firestore is not initialized.");
-    return null;
-  }
+  if (typeof window === 'undefined') return null;
   try {
-    const draftDocRef = doc(db, DRAFT_REQUESTS_COLLECTION, userId);
-    const docSnap = await getDoc(draftDocRef);
-    return processDraftRequestDoc(docSnap);
+    const userDraftKey = getUserDraftKey(userId);
+    const draftJson = localStorage.getItem(userDraftKey);
+    if (draftJson) {
+      const draft = JSON.parse(draftJson) as DraftServiceRequestData;
+      // Ensure date fields are correctly parsed if stored as ISO strings
+      if (draft.lastUpdated && typeof draft.lastUpdated === 'string') {
+        draft.lastUpdated = new Date(draft.lastUpdated);
+      }
+      return draft;
+    }
+    return null;
   } catch (error) {
-    console.error("Error fetching draft request:", error);
-    // It's okay if a draft doesn't exist, so don't throw, just return null.
+    console.error("Error fetching draft request from localStorage:", error);
     return null;
   }
 };
 
 export const saveDraftRequest = async (userId: string, draftData: Partial<Omit<DraftServiceRequestData, 'userId' | 'lastUpdated'>>): Promise<void> => {
-  if (!db) {
-    console.error("Firestore is not initialized.");
-    return;
-  }
+  if (typeof window === 'undefined') return;
   try {
-    const draftDocRef = doc(db, DRAFT_REQUESTS_COLLECTION, userId);
-    const dataToSave = {
+    const userDraftKey = getUserDraftKey(userId);
+    const existingDraft = await getDraftRequest(userId) || {};
+    
+    const dataToSave: DraftServiceRequestData = {
+      ...existingDraft,
       ...draftData,
-      userId, // Ensure userId is part of the document data itself
-      lastUpdated: Timestamp.now(),
+      userId, 
+      lastUpdated: new Date(),
     };
-    await setDoc(draftDocRef, dataToSave, { merge: true }); // Use merge to update existing fields or create if not exists
+    localStorage.setItem(userDraftKey, JSON.stringify(dataToSave));
   } catch (error) {
-    console.error("Error saving draft request:", error);
-    throw error; // Re-throw to allow caller to handle
+    console.error("Error saving draft request to localStorage:", error);
+    // Not throwing error for localStorage issues as it's non-critical for some flows
   }
 };
 
 export const deleteDraftRequest = async (userId: string): Promise<void> => {
-  if (!db) {
-    console.error("Firestore is not initialized.");
-    return;
-  }
+  if (typeof window === 'undefined') return;
   try {
-    const draftDocRef = doc(db, DRAFT_REQUESTS_COLLECTION, userId);
-    await deleteDoc(draftDocRef);
+    const userDraftKey = getUserDraftKey(userId);
+    localStorage.removeItem(userDraftKey);
   } catch (error) {
-    console.error("Error deleting draft request:", error);
-    // Don't throw if deleting fails, it's not critical for main flow usually
+    console.error("Error deleting draft request from localStorage:", error);
   }
 };

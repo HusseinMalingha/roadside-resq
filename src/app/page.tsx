@@ -11,15 +11,47 @@ import VehicleInfoForm from '@/components/VehicleInfoForm';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { CheckCircle, MessageSquareHeart, Car, Clock, Loader2, ArrowLeft, Home, RefreshCw, LogIn, AlertCircle as AlertCircleIcon, Send, Ban, Settings, Save } from 'lucide-react';
+import { CheckCircle, MessageSquareHeart, Car, Clock, Loader2, ArrowLeft, Home, RefreshCw, LogIn, AlertCircle as AlertCircleIcon, Send, Settings } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { addServiceRequest, listenToRequestById } from '@/services/requestService'; 
-import { getDraftRequest, saveDraftRequest, deleteDraftRequest } from '@/services/draftRequestService';
+import { addServiceRequest, listenToRequestById } from '@/services/requestService'; // Uses localStorage based service now
+import { getDraftRequest, saveDraftRequest, deleteDraftRequest } from '@/services/draftRequestService'; // Uses localStorage
 
 type AppStep = 'initial' | 'details' | 'providers' | 'tracking' | 'completed';
+
+// Static provider list as Firestore is removed
+const STATIC_PROVIDERS: ServiceProvider[] = [
+  { 
+    id: 'ax-kampala-central', 
+    name: 'Auto Xpress - Kampala Central', 
+    phone: '(256) 772-123456', 
+    etaMinutes: 15, 
+    currentLocation: { lat: 0.3136, lng: 32.5811 }, 
+    generalLocation: "Kampala Central (City Oil Kira Rd)",
+    servicesOffered: ['Tire Services', 'Battery Replacement', 'Oil Change', 'Brake Services', 'Flat tire', 'Dead battery', 'Vehicle Diagnostics'] 
+  },
+  { 
+    id: 'ax-lugogo', 
+    name: 'Auto Xpress - Lugogo', 
+    phone: '(256) 772-234567', 
+    etaMinutes: 20, 
+    currentLocation: { lat: 0.3270, lng: 32.5990 }, 
+    generalLocation: "Lugogo (U-Save, Next to Forest Mall)",
+    servicesOffered: ['Suspension Work', 'Diagnostics', 'Tire Alignment', 'Jump Start', 'Engine failure', 'Car Wash'] 
+  },
+   {
+    id: 'ax-entebbe',
+    name: 'Auto Xpress - Entebbe',
+    phone: '(256) 772-345678',
+    etaMinutes: 45,
+    currentLocation: { lat: 0.0476, lng: 32.4606 },
+    generalLocation: "Entebbe Town (Shell Petrol Station)",
+    servicesOffered: ['Tire Services', 'Battery Check', 'Oil Top-up', 'Flat tire']
+  },
+];
+
 
 export default function RoadsideRescuePage() {
   const { user, role, loading: authLoading, isFirebaseReady } = useAuth();
@@ -47,7 +79,7 @@ export default function RoadsideRescuePage() {
   const { toast } = useToast();
 
   const persistDraft = useCallback(async () => {
-    if (user && isFirebaseReady && currentStep === 'details') {
+    if (user && currentStep === 'details') { // Removed isFirebaseReady check as it's not for db
       const draftData: Partial<Omit<DraftServiceRequestData, 'userId' | 'lastUpdated'>> = {
         userLocation: userLocation,
         issueDescription: issueDescription,
@@ -58,20 +90,19 @@ export default function RoadsideRescuePage() {
         await saveDraftRequest(user.uid, draftData);
       } catch (error) {
         console.warn("Failed to save draft:", error);
-        // Optionally toast, but might be too noisy
       }
     }
-  }, [user, isFirebaseReady, userLocation, issueDescription, confirmedIssueSummary, vehicleInfo, currentStep]);
+  }, [user, userLocation, issueDescription, confirmedIssueSummary, vehicleInfo, currentStep]);
 
   useEffect(() => {
-    if (user && isFirebaseReady && currentStep === 'details' && !isLoadingDraft) {
+    if (user && currentStep === 'details' && !isLoadingDraft) {
       persistDraft();
     }
-  }, [userLocation, issueDescription, confirmedIssueSummary, vehicleInfo, user, isFirebaseReady, currentStep, persistDraft, isLoadingDraft]);
+  }, [userLocation, issueDescription, confirmedIssueSummary, vehicleInfo, user, currentStep, persistDraft, isLoadingDraft]);
 
   useEffect(() => {
     const loadDraft = async () => {
-      if (user && isFirebaseReady && currentStep === 'details') {
+      if (user && currentStep === 'details') {
         setIsLoadingDraft(true);
         try {
           const draft = await getDraftRequest(user.uid);
@@ -83,7 +114,7 @@ export default function RoadsideRescuePage() {
             if (draft.issueDescription) setIssueDescription(draft.issueDescription);
             if (draft.issueSummary) {
               setConfirmedIssueSummary(draft.issueSummary);
-              if(draft.issueDescription) setIsIssueConfirmed(true); // Only confirm if description also exists
+              if(draft.issueDescription) setIsIssueConfirmed(true); 
             }
             if (draft.vehicleInfo) {
               setVehicleInfo(draft.vehicleInfo);
@@ -102,11 +133,11 @@ export default function RoadsideRescuePage() {
       }
     };
     
-    if (currentStep === 'details') { // Only attempt to load draft when entering details step
+    if (currentStep === 'details') { 
         loadDraft();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, isFirebaseReady, currentStep]); // Removed toast from deps
+  }, [user, currentStep]); 
 
   const handleLocationAcquired = useCallback((location: Location) => {
     setUserLocation(location);
@@ -160,7 +191,7 @@ export default function RoadsideRescuePage() {
     setHasProviderArrivedSimulation(false); 
     
     if (userLocation && user && vehicleInfo) { 
-      const newRequestData: Omit<ServiceRequestType, 'id'> = {
+      const newRequestData: Omit<ServiceRequestType, 'id' | 'requestTime'> & { requestTime: Date } = {
         requestId: `RR-${Math.random().toString(36).substring(2, 7).toUpperCase()}`,
         userId: user.uid, 
         userLocation: userLocation,
@@ -175,20 +206,20 @@ export default function RoadsideRescuePage() {
       };
       
       try {
-        const createdRequest = await addServiceRequest(newRequestData as Omit<ServiceRequestType, 'id' | 'requestTime'> & { requestTime: Date });
+        const createdRequest = await addServiceRequest(newRequestData); // Uses localStorage
         setServiceRequest(createdRequest); 
         setServiceRequestId(createdRequest.id); 
-        if (user) await deleteDraftRequest(user.uid); // Clear draft on successful submission
+        if (user) await deleteDraftRequest(user.uid); 
         setCurrentStep('tracking');
         toast({
           title: "Provider Selected!",
           description: `You've selected ${provider.name}. They are on their way. Request ID: ${createdRequest.requestId}`,
         });
       } catch (error) {
-        console.error("Error creating service request:", error);
+        console.error("Error creating service request (localStorage):", error);
         toast({
           title: "Request Failed",
-          description: "Could not submit your service request. Please try again.",
+          description: "Could not submit your service request locally. Please try again.",
           variant: "destructive",
         });
       }
@@ -202,7 +233,7 @@ export default function RoadsideRescuePage() {
   };
 
   const resetApp = () => {
-    if (user && isFirebaseReady) {
+    if (user) {
         deleteDraftRequest(user.uid).catch(err => console.warn("Failed to clear draft on reset", err));
     }
     setCurrentStep('initial');
@@ -222,7 +253,7 @@ export default function RoadsideRescuePage() {
   };
   
   const handleInitialAction = () => {
-    if (!isFirebaseReady) {
+    if (!isFirebaseReady) { // Check Firebase Auth readiness
       toast({
         title: "Service Unavailable",
         description: "Authentication service is not ready. Please try again later.",
@@ -246,16 +277,20 @@ export default function RoadsideRescuePage() {
     }
   };
 
+  // This effect simulates tracking or updates from an admin.
+  // With localStorage, this would typically involve listening to 'storage' events
+  // or periodic checks if another part of the app (like a simplified admin view) updates it.
   useEffect(() => {
     if (!serviceRequestId || currentStep !== 'tracking') {
       return; 
     }
 
+    // listenToRequestById now comes from the localStorage-based service
     const unsubscribe = listenToRequestById(serviceRequestId, (updatedRequest) => {
       if (updatedRequest) {
         if (serviceRequest?.status !== updatedRequest.status) {
            toast({
-            title: "Request Status Updated",
+            title: "Request Status Updated (Local)",
             description: `Your request status is now: ${updatedRequest.status}`,
           });
         }
@@ -263,6 +298,8 @@ export default function RoadsideRescuePage() {
         
         if (updatedRequest.selectedProvider) {
             setSelectedProvider(updatedRequest.selectedProvider);
+            // ETA and provider location would likely be static from the selectedProvider
+            // unless a mock admin UI updates it in localStorage.
             setProviderETA(updatedRequest.selectedProvider.etaMinutes); 
             setProviderCurrentLocation(updatedRequest.selectedProvider.currentLocation); 
         }
@@ -271,31 +308,26 @@ export default function RoadsideRescuePage() {
           setCurrentStep('completed');
         }
       } else {
-        console.warn(`Request with ID ${serviceRequestId} not found.`);
-        toast({ title: "Request Not Found", description: "The service request could not be loaded.", variant: "destructive"});
+        console.warn(`Request with ID ${serviceRequestId} not found in localStorage.`);
+        // Potentially reset if request disappears from local storage
       }
     });
 
-    return () => unsubscribe();
+    return () => unsubscribe(); // This will remove the 'storage' event listener
   }, [serviceRequestId, toast, currentStep, serviceRequest?.status]);
 
+  // ETA simulation remains largely the same visually
   useEffect(() => {
     let trackingInterval: NodeJS.Timeout | null = null;
 
     if (currentStep === 'tracking' && selectedProvider && userLocation && providerETA !== null && serviceRequest && (serviceRequest.status === 'Accepted' || serviceRequest.status === 'In Progress')) {
-      // Use actual distance and average speed for more realistic ETA if possible,
-      // For now, this continues the simulation based on initial ETA.
-      // The actual ETA is based on provider's initial value and doesn't count down here.
-      // The marker movement is purely visual based on initial ETA.
-      
       let currentSimulatedProviderLoc = providerCurrentLocation || selectedProvider.currentLocation; 
       const initialProviderLat = selectedProvider.currentLocation.lat;
       const initialProviderLng = selectedProvider.currentLocation.lng;
       const userLat = userLocation.lat;
       const userLng = userLocation.lng;
       
-      // How long the visual simulation runs (e.g. 20 seconds for demo, or link to ETA)
-      const simulationDurationSeconds = Math.min(providerETA * 60, 120); // Cap at 2 mins for demo visual
+      const simulationDurationSeconds = Math.min(providerETA * 60, 120); 
       const updateIntervalMs = 2000;
       let elapsedSimulationTimeMs = 0;
 
@@ -361,11 +393,11 @@ export default function RoadsideRescuePage() {
             <CardContent>
               <p className="mb-6">
                 {isStaffUser 
-                  ? "Manage service requests, staff, and garage branches from the admin panel." 
+                  ? "Manage service requests, staff, and garage branches from the admin panel (local data)." 
                   : "We'll quickly find nearby assistance for your issue."
                 }
               </p>
-               {!isFirebaseReady && !authLoading && (
+               {!isFirebaseReady && !authLoading && ( // Still relevant for Auth service
                 <Alert variant="destructive" className="mb-4">
                   <AlertCircleIcon className="h-4 w-4" />
                   <AlertTitle>Authentication Service Unavailable</AlertTitle>
@@ -387,7 +419,7 @@ export default function RoadsideRescuePage() {
                   size="lg" 
                   className="w-full text-lg py-7 bg-accent hover:bg-accent/90 text-accent-foreground" 
                   onClick={handleInitialAction}
-                  disabled={authLoading || !isFirebaseReady}
+                  disabled={authLoading || !isFirebaseReady} // Auth readiness check
                 >
                   {authLoading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : 
                     !user ? <><LogIn className="mr-2 h-5 w-5" /> Login to Request</> : 
@@ -409,11 +441,11 @@ export default function RoadsideRescuePage() {
             resetApp(); 
             return <div className="flex-grow flex items-center justify-center"><Loader2 className="h-12 w-12 animate-spin text-primary" /><p className="ml-3">Redirecting Staff...</p></div>;
         }
-        if (!isFirebaseReady && !authLoading) { 
+        if (!isFirebaseReady && !authLoading) { // Auth service check
              return (
                 <Alert variant="destructive" className="w-full max-w-md">
                     <AlertCircleIcon className="h-4 w-4" />
-                    <AlertTitle>Service Unavailable</AlertTitle>
+                    <AlertTitle>Auth Service Unavailable</AlertTitle>
                     <AlertDescription>Cannot load details form as authentication service is not ready.</AlertDescription>
                      <Button onClick={resetApp} className="mt-4">Go Back</Button>
                 </Alert>
@@ -488,6 +520,8 @@ export default function RoadsideRescuePage() {
               userLocation={userLocation}
               issueType={confirmedIssueSummary}
               onSelectProvider={handleSelectProvider}
+              // Pass the static list of providers here as Firestore is removed
+              staticProviders={STATIC_PROVIDERS} 
             />
           </div>
         );

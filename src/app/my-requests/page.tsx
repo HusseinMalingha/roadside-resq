@@ -1,10 +1,11 @@
+
 "use client";
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import { getUserRequests } from '@/services/requestService'; // Import Firestore service
+import { getUserRequests } from '@/services/requestService'; // Uses localStorage based service
 import type { ServiceRequest } from '@/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -13,36 +14,34 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import RequestHistoryItem from '@/components/request-history/RequestHistoryItem';
 
 export default function MyRequestsPage() {
-  const { user, loading: authLoading, isFirebaseReady } = useAuth();
+  const { user, loading: authLoading, isFirebaseReady } = useAuth(); // isFirebaseReady for Auth
   const router = useRouter();
   const [userRequests, setUserRequests] = useState<ServiceRequest[]>([]);
-  const [isLoading, setIsLoading] = useState(true); // For data fetching, distinct from authLoading
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (!authLoading) { // Auth state has resolved
-      if (!user && isFirebaseReady) { // Firebase ready, but no user
+    if (!authLoading) { 
+      if (!user && isFirebaseReady) { 
         router.push('/login?redirect=/my-requests');
-      } else if (user && isFirebaseReady) { // Firebase ready and user exists
-        setIsLoading(true); // Start data fetching loader
-        getUserRequests(user.uid)
+      } else if (user && isFirebaseReady) { 
+        setIsLoading(true); 
+        getUserRequests(user.uid) // Fetches from localStorage
           .then((requests) => {
-            setUserRequests(requests);
+            setUserRequests(requests.map(r => ({...r, requestTime: new Date(r.requestTime)}))); // Ensure date is Date object
           })
           .catch(error => {
-            console.error("Failed to fetch user requests:", error);
-            // Optionally, show a toast message for the error using useToast()
+            console.error("Failed to fetch user requests from localStorage:", error);
           })
           .finally(() => {
-            setIsLoading(false); // Stop data fetching loader
+            setIsLoading(false); 
           });
-      } else if (!isFirebaseReady) {
-        // Firebase itself is not ready, stop loading, AuthContext will show a global toast.
+      } else if (!isFirebaseReady) { // Auth service not ready
         setIsLoading(false);
       }
     }
   }, [user, authLoading, router, isFirebaseReady]);
 
-  if (authLoading || (isLoading && isFirebaseReady)) { // Show loader if auth is loading OR data is loading (and Firebase is ready)
+  if (authLoading || (isLoading && isFirebaseReady)) { 
     return (
       <div className="flex-grow flex flex-col items-center justify-center">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -51,14 +50,14 @@ export default function MyRequestsPage() {
     );
   }
 
-  if (!isFirebaseReady && !authLoading) { // Firebase not ready, auth resolved
+  if (!isFirebaseReady && !authLoading) { 
      return (
         <div className="flex-grow flex items-center justify-center p-4">
             <Card className="w-full max-w-md text-center shadow-xl">
                 <CardHeader>
                     <AlertCircle className="h-16 w-16 text-destructive mx-auto mb-4" />
                     <CardTitle>Service Unavailable</CardTitle>
-                    <CardDescription>Cannot connect to services. Please try again later.</CardDescription>
+                    <CardDescription>Cannot connect to authentication services. Please try again later.</CardDescription>
                 </CardHeader>
                  <CardFooter>
                     <Button onClick={() => window.location.reload()} className="w-full">
@@ -70,7 +69,7 @@ export default function MyRequestsPage() {
     );
   }
 
-  if (!user && !authLoading && isFirebaseReady) { // Redirecting state or post-redirect pre-login page display
+  if (!user && !authLoading && isFirebaseReady) { 
     return (
         <div className="flex-grow flex flex-col items-center justify-center text-center p-6">
             <Card className="w-full max-w-md shadow-xl">
@@ -112,7 +111,7 @@ export default function MyRequestsPage() {
           </div>
         </CardHeader>
         <CardContent>
-          {userRequests.length === 0 && !isLoading ? ( // Also check isLoading to avoid "No requests" flash
+          {userRequests.length === 0 && !isLoading ? ( 
             <div className="text-center py-10">
               <Info className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
               <p className="text-xl font-semibold text-muted-foreground">No Past Requests Found</p>
@@ -132,4 +131,3 @@ export default function MyRequestsPage() {
     </div>
   );
 }
-
