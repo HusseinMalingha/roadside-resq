@@ -28,8 +28,9 @@ export default function RoadsideRescuePage() {
   const [confirmedIssueSummary, setConfirmedIssueSummary] = useState<string>('');
   const [vehicleInfo, setVehicleInfo] = useState<VehicleInfo | null>(null); // State for vehicle info
   const [selectedProvider, setSelectedProvider] = useState<ServiceProvider | null>(null);
-  const [providerETA, setProviderETA] = useState<number | null>(null);
+  const [providerETA, setProviderETA] = useState<number | null>(null); // This will now be static once set
   const [providerCurrentLocation, setProviderCurrentLocation] = useState<Location | null>(null);
+  const [hasProviderArrivedSimulation, setHasProviderArrivedSimulation] = useState(false);
   
   const [serviceRequest, setServiceRequest] = useState<ServiceRequestType | null>(null);
 
@@ -87,17 +88,18 @@ export default function RoadsideRescuePage() {
 
   const handleSelectProvider = (provider: ServiceProvider) => {
     setSelectedProvider(provider);
-    setProviderETA(provider.etaMinutes);
-    setProviderCurrentLocation(provider.currentLocation);
+    setProviderETA(provider.etaMinutes); // Set the static ETA
+    setProviderCurrentLocation(provider.currentLocation); // Set initial provider location
+    setHasProviderArrivedSimulation(false); // Reset simulation arrival state
     
-    if (userLocation && user && vehicleInfo) { // Ensure vehicleInfo is also present
+    if (userLocation && user && vehicleInfo) { 
       const newRequest: ServiceRequestType = {
         id: `req-${Date.now()}`, 
         requestId: `RR-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
         userLocation: userLocation,
         issueDescription: issueDescription,
         issueSummary: confirmedIssueSummary,
-        vehicleInfo: vehicleInfo, // Add vehicle info to the request
+        vehicleInfo: vehicleInfo, 
         selectedProvider: provider,
         requestTime: new Date(),
         status: 'Pending', 
@@ -120,7 +122,7 @@ export default function RoadsideRescuePage() {
     setUserLocation(null);
     setIssueDescription('');
     setConfirmedIssueSummary('');
-    setVehicleInfo(null); // Reset vehicle info
+    setVehicleInfo(null); 
     setSelectedProvider(null);
     setProviderETA(null);
     setProviderCurrentLocation(null);
@@ -128,6 +130,7 @@ export default function RoadsideRescuePage() {
     setIsLocationConfirmed(false);
     setIsIssueConfirmed(false);
     setIsVehicleInfoConfirmed(false);
+    setHasProviderArrivedSimulation(false);
   };
   
   const handleInitialAction = () => {
@@ -148,41 +151,53 @@ export default function RoadsideRescuePage() {
 
   useEffect(() => {
     let trackingInterval: NodeJS.Timeout;
+    // This effect is for simulating provider movement and eventual arrival for demo
     if (currentStep === 'tracking' && selectedProvider && userLocation && providerETA !== null) {
-      let currentEta = providerETA;
-      let currentProviderLoc = providerCurrentLocation || selectedProvider.currentLocation;
+      let simulatedTravelTimeRemaining = providerETA; // Use initial ETA for simulation duration
+      let currentSimulatedProviderLoc = providerCurrentLocation || selectedProvider.currentLocation; // Start from current or initial
 
       trackingInterval = setInterval(() => {
-        currentEta -= 1;
-        setProviderETA(currentEta);
+        if (simulatedTravelTimeRemaining > 0) {
+          simulatedTravelTimeRemaining -= 1; // This controls the simulation duration
+        }
 
-        if (currentEta <= 0) {
+        // Update provider location for map display
+        if (userLocation && currentSimulatedProviderLoc && selectedProvider) {
+            const totalSteps = providerETA > 0 ? providerETA : 1; // Steps based on original ETA
+            // Calculate how many steps should have been taken based on elapsed time vs total ETA
+            const stepsProgressRatio = Math.min((providerETA - simulatedTravelTimeRemaining) / totalSteps, 1);
+
+            const initialProviderLat = selectedProvider.currentLocation.lat;
+            const initialProviderLng = selectedProvider.currentLocation.lng;
+            const userLat = userLocation.lat;
+            const userLng = userLocation.lng;
+            
+            currentSimulatedProviderLoc = {
+              lat: initialProviderLat + (userLat - initialProviderLat) * stepsProgressRatio,
+              lng: initialProviderLng + (userLng - initialProviderLng) * stepsProgressRatio,
+            };
+            setProviderCurrentLocation(currentSimulatedProviderLoc);
+        }
+
+        if (simulatedTravelTimeRemaining <= 0) {
           clearInterval(trackingInterval);
-          setCurrentStep('completed');
-          setProviderETA(0);
-           toast({
-            title: "Provider Arrived!",
-            description: `${selectedProvider.name} should be at your location.`,
-            duration: 7000,
-          });
+          setHasProviderArrivedSimulation(true); // Set arrival flag
+          setCurrentStep('completed'); // Transition to completed step
+          
+          if (selectedProvider) { 
+            toast({
+              title: "Provider Arrived!",
+              description: `${selectedProvider.name} should be at your location.`,
+              duration: 7000,
+            });
+          }
           return;
         }
-        
-        if (userLocation && currentProviderLoc) {
-            const latDiff = userLocation.lat - currentProviderLoc.lat;
-            const lngDiff = userLocation.lng - currentProviderLoc.lng;
-            const stepsRemaining = currentEta > 0 ? currentEta : 1; 
-            
-            currentProviderLoc = {
-            lat: currentProviderLoc.lat + latDiff / stepsRemaining,
-            lng: currentProviderLoc.lng + lngDiff / stepsRemaining,
-            };
-            setProviderCurrentLocation(currentProviderLoc);
-        }
-      }, 2000); 
+      }, 2000); // Interval for simulation updates (e.g., every 2 seconds for demo)
     }
     return () => clearInterval(trackingInterval);
-  }, [currentStep, selectedProvider, userLocation, providerETA, providerCurrentLocation, toast]);
+  }, [currentStep, selectedProvider, userLocation, providerETA, toast]); // providerCurrentLocation removed from deps
+
 
   const allDetailsProvided = isLocationConfirmed && isIssueConfirmed && isVehicleInfoConfirmed;
 
@@ -339,17 +354,19 @@ export default function RoadsideRescuePage() {
                      </p>
                    )}
                   <div className="mt-3 pt-3 border-t">
-                  {providerETA !== null && providerETA > 0 ? (
+                  {providerETA !== null && !hasProviderArrivedSimulation && (
                     <div className="flex items-center text-xl font-semibold text-primary">
                       <Clock className="mr-2 h-6 w-6" />
                       Estimated Arrival: {providerETA} min
                     </div>
-                  ) : providerETA === 0 ? (
+                  )}
+                  {hasProviderArrivedSimulation && (
                      <div className="flex items-center text-xl font-semibold text-green-600">
                       <CheckCircle className="mr-2 h-6 w-6" />
                       Provider should be arriving now!
                     </div>
-                  ) : (
+                  )}
+                  {providerETA === null && !hasProviderArrivedSimulation && ( 
                     <div className="flex items-center text-lg text-muted-foreground">
                       <Loader2 className="mr-2 h-5 w-5 animate-spin" />
                       Calculating arrival...
@@ -391,7 +408,7 @@ export default function RoadsideRescuePage() {
               <Button size="lg" className="w-full text-lg py-7" onClick={resetApp}>
                 <Home className="mr-2 h-5 w-5" /> Back to Home
               </Button>
-               <Button size="sm" variant="outline" className="w-full" onClick={() => setCurrentStep('tracking')}>
+               <Button size="sm" variant="outline" className="w-full" onClick={() => {setHasProviderArrivedSimulation(false); setCurrentStep('tracking');}}>
                 <RefreshCw className="mr-2 h-4 w-4" /> View Tracking Again
               </Button>
             </CardFooter>
@@ -408,3 +425,4 @@ export default function RoadsideRescuePage() {
     </div>
   );
 }
+
