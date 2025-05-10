@@ -14,7 +14,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useRouter, useSearchParams } from 'next/navigation';
 
 const LoginPage: FC = () => {
-  const { signInWithGoogle, signInWithPhoneNumberStep1, signInWithPhoneNumberStep2, loading: authLoading, setupRecaptcha, user } = useAuth();
+  const { 
+    signInWithGoogle, 
+    signInWithPhoneNumberStep1, 
+    signInWithPhoneNumberStep2, 
+    loading: authLoading, 
+    setupRecaptcha, 
+    user,
+    isFirebaseReady // Added from AuthContext
+  } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -28,40 +36,45 @@ const LoginPage: FC = () => {
   const redirectUrl = searchParams.get('redirect') || '/';
 
   useEffect(() => {
-    if (typeof window !== 'undefined' && !appVerifier) {
+    if (isFirebaseReady && typeof window !== 'undefined' && !appVerifier) {
       const verifier = setupRecaptcha('recaptcha-container-invisible');
       if (verifier) {
         setAppVerifier(verifier);
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [setupRecaptcha, appVerifier]);
+  }, [setupRecaptcha, appVerifier, isFirebaseReady]);
 
 
   const handleGoogleSignIn = async () => {
+    if (!isFirebaseReady) return;
     setIsSubmitting(true);
     try {
       await signInWithGoogle();
       router.push(redirectUrl);
     } catch (error) {
-      // Error is toasted within signInWithGoogle
-      setIsSubmitting(false); // Reset loading state on error
+      setIsSubmitting(false); 
     }
-    // On success, navigation happens, component might unmount, so setIsSubmitting(false) might not be strictly needed.
   };
 
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isFirebaseReady) return;
     if (!phoneNumber || !appVerifier) {
-      if(!appVerifier) {
+      if(!appVerifier && isFirebaseReady) { // Attempt to re-setup verifier if not present and Firebase is ready
          const verifier = setupRecaptcha('recaptcha-container-invisible');
          if (verifier) {
            setAppVerifier(verifier);
          } else {
+            // Failed to setup verifier, cannot proceed
             return;
          }
+      } else if (!appVerifier && !isFirebaseReady) {
+        // Firebase not ready, cannot proceed
+        return;
+      } else if (!phoneNumber) {
+        // Phone number missing
+        return;
       }
-      return;
     }
     setIsSubmitting(true);
     const result = await signInWithPhoneNumberStep1(phoneNumber, appVerifier);
@@ -69,22 +82,20 @@ const LoginPage: FC = () => {
       setConfirmationResult(result);
       setOtpSent(true);
     }
-    // signInWithPhoneNumberStep1 handles its own toast for errors.
-    setIsSubmitting(false); // Always reset after attempt, whether success or fail for this step
+    setIsSubmitting(false);
   };
 
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isFirebaseReady) return;
     if (!otp || !confirmationResult) return;
     setIsSubmitting(true);
     try {
       await signInWithPhoneNumberStep2(confirmationResult, otp);
       router.push(redirectUrl);
     } catch (error) {
-      // Error is toasted within signInWithPhoneNumberStep2
-      setIsSubmitting(false); // Reset loading state on error
+      setIsSubmitting(false); 
     }
-    // On success, navigation happens.
   };
 
   if (authLoading && !user) { 
@@ -104,10 +115,15 @@ const LoginPage: FC = () => {
           <CardDescription>Sign in to access services and manage your requests.</CardDescription>
         </CardHeader>
         <CardContent>
+          {!isFirebaseReady && (
+            <div className="text-center text-destructive mb-4">
+              Authentication services are currently unavailable. Please try again later.
+            </div>
+          )}
           <Tabs defaultValue="phone" className="w-full">
             <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="phone">Phone Sign-In</TabsTrigger>
-              <TabsTrigger value="google">Google Sign-In</TabsTrigger>
+              <TabsTrigger value="phone" disabled={!isFirebaseReady}>Phone Sign-In</TabsTrigger>
+              <TabsTrigger value="google" disabled={!isFirebaseReady}>Google Sign-In</TabsTrigger>
             </TabsList>
             <TabsContent value="phone" className="space-y-4 pt-4">
               {!otpSent ? (
@@ -121,10 +137,10 @@ const LoginPage: FC = () => {
                       onChange={(e) => setPhoneNumber(e.target.value)}
                       placeholder="Enter your phone number"
                       required
-                      disabled={isSubmitting}
+                      disabled={isSubmitting || !isFirebaseReady}
                     />
                   </div>
-                  <Button type="submit" className="w-full" disabled={isSubmitting || !appVerifier}>
+                  <Button type="submit" className="w-full" disabled={isSubmitting || !appVerifier || !isFirebaseReady}>
                     {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Phone className="mr-2 h-4 w-4" />}
                     Send OTP
                   </Button>
@@ -140,14 +156,14 @@ const LoginPage: FC = () => {
                       onChange={(e) => setOtp(e.target.value)}
                       placeholder="Enter OTP"
                       required
-                      disabled={isSubmitting}
+                      disabled={isSubmitting || !isFirebaseReady}
                     />
                   </div>
-                  <Button type="submit" className="w-full" disabled={isSubmitting}>
+                  <Button type="submit" className="w-full" disabled={isSubmitting || !isFirebaseReady}>
                     {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <KeyRound className="mr-2 h-4 w-4" />}
                     Verify OTP
                   </Button>
-                  <Button variant="link" onClick={() => {setOtpSent(false); setOtp(''); setConfirmationResult(null);}} className="text-sm p-0 h-auto" disabled={isSubmitting}>
+                  <Button variant="link" onClick={() => {setOtpSent(false); setOtp(''); setConfirmationResult(null);}} className="text-sm p-0 h-auto" disabled={isSubmitting || !isFirebaseReady}>
                     Change phone number?
                   </Button>
                 </form>
@@ -155,7 +171,7 @@ const LoginPage: FC = () => {
                <div id="recaptcha-container-invisible"></div>
             </TabsContent>
             <TabsContent value="google" className="pt-4">
-               <Button onClick={handleGoogleSignIn} variant="outline" className="w-full text-base py-6" disabled={isSubmitting}>
+               <Button onClick={handleGoogleSignIn} variant="outline" className="w-full text-base py-6" disabled={isSubmitting || !isFirebaseReady}>
                 {isSubmitting ? (
                   <Loader2 className="mr-2 h-5 w-5 animate-spin" />
                 ) : (

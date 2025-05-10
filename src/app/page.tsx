@@ -18,7 +18,7 @@ import { useRouter } from 'next/navigation';
 type AppStep = 'initial' | 'details' | 'providers' | 'tracking' | 'completed';
 
 export default function RoadsideRescuePage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, isFirebaseReady } = useAuth(); // Added isFirebaseReady
   const router = useRouter();
 
   const [currentStep, setCurrentStep] = useState<AppStep>('initial');
@@ -57,22 +57,20 @@ export default function RoadsideRescuePage() {
     setProviderETA(provider.etaMinutes);
     setProviderCurrentLocation(provider.currentLocation);
     
-    // Create the service request object
     if (userLocation && user) {
       const newRequest: ServiceRequestType = {
-        id: `req-${Date.now()}`, // Simple unique ID
+        id: `req-${Date.now()}`, 
         requestId: `RR-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
         userLocation: userLocation,
         issueDescription: issueDescription,
         issueSummary: confirmedIssueSummary,
         selectedProvider: provider,
         requestTime: new Date(),
-        status: 'Pending', // Initial status, garage admin will update
+        status: 'Pending', 
         userName: user.displayName || "N/A",
         userPhone: user.phoneNumber || "N/A"
       };
       setServiceRequest(newRequest);
-      // Here you would typically send newRequest to your backend/Firebase
       console.log("Service Request Created:", newRequest); 
     }
     
@@ -95,8 +93,16 @@ export default function RoadsideRescuePage() {
   };
   
   const handleInitialAction = () => {
+    if (!isFirebaseReady) {
+      toast({
+        title: "Service Unavailable",
+        description: "Authentication service is not ready. Please try again later.",
+        variant: "destructive",
+      });
+      return;
+    }
     if (!user && !authLoading) {
-      router.push('/login?redirect=/'); // Redirect to login, then back to home
+      router.push('/login?redirect=/'); 
     } else if (user) {
       setCurrentStep('details');
     }
@@ -124,7 +130,6 @@ export default function RoadsideRescuePage() {
           return;
         }
 
-        // Simulate provider movement
         const latDiff = userLocation.lat - currentProviderLoc.lat;
         const lngDiff = userLocation.lng - currentProviderLoc.lng;
         const stepsRemaining = currentEta > 0 ? currentEta : 1; 
@@ -166,13 +171,22 @@ export default function RoadsideRescuePage() {
             </CardHeader>
             <CardContent>
               <p className="mb-6">We'll quickly find nearby assistance for your issue.</p>
+               {!isFirebaseReady && !authLoading && (
+                <Alert variant="destructive" className="mb-4">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertTitle>Authentication Service Unavailable</AlertTitle>
+                  <AlertDescription>
+                    Cannot proceed with request. Please try again later.
+                  </AlertDescription>
+                </Alert>
+              )}
             </CardContent>
             <CardFooter>
               <Button 
                 size="lg" 
                 className="w-full text-lg py-7 bg-accent hover:bg-accent/90 text-accent-foreground" 
                 onClick={handleInitialAction}
-                disabled={authLoading}
+                disabled={authLoading || !isFirebaseReady}
               >
                 {authLoading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : 
                   !user ? <><LogIn className="mr-2 h-5 w-5" /> Login to Request</> : "Request Assistance Now"
@@ -182,9 +196,19 @@ export default function RoadsideRescuePage() {
           </Card>
         );
       case 'details':
-        if (!user) { // Should ideally not reach here if initial action handles it
+        if (!user && isFirebaseReady) { 
           router.push('/login?redirect=/');
           return <Loader2 className="h-12 w-12 animate-spin text-primary" />;
+        }
+        if (!isFirebaseReady) {
+             return (
+                <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>Service Unavailable</AlertTitle>
+                    <AlertDescription>Cannot load details form as authentication service is not ready.</AlertDescription>
+                     <Button onClick={resetApp} className="mt-4">Go Back</Button>
+                </Alert>
+            );
         }
         return (
           <div className="w-full max-w-2xl space-y-8 animate-slideUp">
@@ -317,4 +341,3 @@ export default function RoadsideRescuePage() {
     </div>
   );
 }
-

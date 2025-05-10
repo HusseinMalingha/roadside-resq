@@ -11,7 +11,7 @@ import {
   signOut, 
   type NextOrObserver, 
   type User, 
-  type Auth, 
+  type Auth as FirebaseAuthType, // Renamed to avoid conflict
   type ConfirmationResult 
 } from 'firebase/auth';
 
@@ -25,37 +25,50 @@ const firebaseConfig = {
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
 
-// Initialize Firebase
-let app: FirebaseApp;
-if (!getApps().length) {
-  // Check if all required config values are present
-  if (
-    firebaseConfig.apiKey &&
-    firebaseConfig.authDomain &&
-    firebaseConfig.projectId &&
-    firebaseConfig.storageBucket &&
-    firebaseConfig.messagingSenderId &&
-    firebaseConfig.appId
-  ) {
-    app = initializeApp(firebaseConfig);
+let app: FirebaseApp | null = null;
+let authInstance: FirebaseAuthType | null = null;
+
+const allConfigValuesPresent =
+  firebaseConfig.apiKey &&
+  firebaseConfig.authDomain &&
+  firebaseConfig.projectId &&
+  firebaseConfig.storageBucket &&
+  firebaseConfig.messagingSenderId &&
+  firebaseConfig.appId;
+  // measurementId is often optional for basic auth, so not checked here for critical initialization
+
+if (typeof window !== 'undefined') { // Ensure Firebase is initialized only on the client-side
+  if (!getApps().length) {
+    if (allConfigValuesPresent) {
+      try {
+        app = initializeApp(firebaseConfig);
+        authInstance = getAuth(app);
+        console.log("Firebase initialized successfully.");
+      } catch (e) {
+        console.error("Error initializing Firebase app:", e);
+        // app and authInstance will remain null
+      }
+    } else {
+      console.error(
+        'Firebase configuration is incomplete. Please check your .env file and ensure all NEXT_PUBLIC_FIREBASE_* variables are set. Firebase features will be disabled.'
+      );
+      // app and authInstance will remain null
+    }
   } else {
-    console.error(
-      'Firebase configuration is incomplete. Please check your .env file and ensure all NEXT_PUBLIC_FIREBASE_* variables are set.'
-    );
-    // Fallback or throw an error, depending on how you want to handle missing config
-    // For now, we'll let it proceed, but auth might fail.
-    // A more robust solution might involve not initializing if config is missing.
-    app = initializeApp({}); // This will likely cause issues but prevents immediate crash if some keys are missing
+    app = getApp(); // If already initialized, get the app
+    if (app) { // Ensure app is not null before calling getAuth
+        authInstance = getAuth(app); // Get auth from the existing app
+    } else {
+        console.error("Firebase app was expected to be initialized but is null.");
+    }
   }
-} else {
-  app = getApp();
 }
 
-const auth = getAuth(app);
+
+export const firebaseApp = app;
+export const auth = authInstance; // This will be null if initialization failed or on server
 
 export {
-  app as firebaseApp, // Exporting the app instance can be useful for other Firebase services
-  auth,
   GoogleAuthProvider,
   PhoneAuthProvider,
   RecaptchaVerifier,
@@ -65,6 +78,6 @@ export {
   signOut,
   type NextOrObserver,
   type User,
-  type Auth,
+  type FirebaseAuthType,
   type ConfirmationResult
 };

@@ -2,7 +2,7 @@
 "use client";
 
 import Link from 'next/link';
-import { LifeBuoy, Wrench, LogIn, LogOut, UserCircle, Loader2 } from 'lucide-react';
+import { LifeBuoy, Wrench, LogIn, LogOut, UserCircle, Loader2, AlertCircle } from 'lucide-react'; // Added AlertCircle
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -14,9 +14,15 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 const Header = () => {
-  const { user, loading, signOut } = useAuth();
+  const { user, loading, signOut, isFirebaseReady } = useAuth(); // Added isFirebaseReady
 
   const getInitials = (name?: string | null) => {
     if (!name) return 'RR';
@@ -66,13 +72,28 @@ const Header = () => {
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                {/* Add more items here e.g. Profile, Settings */}
-                <DropdownMenuItem onClick={signOut} className="cursor-pointer">
+                <DropdownMenuItem onClick={signOut} className="cursor-pointer" disabled={!isFirebaseReady}>
                   <LogOut className="mr-2 h-4 w-4" />
                   <span>Log out</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+          ) : !isFirebaseReady ? (
+             <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="relative flex items-center">
+                    <Button className="bg-destructive text-destructive-foreground hover:bg-destructive/90 cursor-not-allowed" disabled>
+                      <AlertCircle className="mr-2 h-5 w-5" />
+                      Login Unavailable
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Firebase not configured. Auth is offline.</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           ) : (
             <Button asChild className="bg-accent text-accent-foreground hover:bg-accent/90">
               <Link href="/login">
