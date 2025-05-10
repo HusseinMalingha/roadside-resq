@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
@@ -11,7 +12,7 @@ import VehicleInfoForm from '@/components/VehicleInfoForm';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { CheckCircle, MessageSquareHeart, Car, Clock, Loader2, ArrowLeft, Home, RefreshCw, LogIn, AlertCircle as AlertCircleIcon, Send } from 'lucide-react';
+import { CheckCircle, MessageSquareHeart, Car, Clock, Loader2, ArrowLeft, Home, RefreshCw, LogIn, AlertCircle as AlertCircleIcon, Send, Ban } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
@@ -20,7 +21,7 @@ import { getRequestsFromStorage, saveRequestsToStorage, LOCAL_STORAGE_REQUESTS_K
 type AppStep = 'initial' | 'details' | 'providers' | 'tracking' | 'completed';
 
 export default function RoadsideRescuePage() {
-  const { user, loading: authLoading, isFirebaseReady } = useAuth();
+  const { user, role, loading: authLoading, isFirebaseReady } = useAuth();
   const router = useRouter();
 
   const [currentStep, setCurrentStep] = useState<AppStep>('initial');
@@ -150,6 +151,14 @@ export default function RoadsideRescuePage() {
     if (!user && !authLoading) {
       router.push('/login?redirect=/'); 
     } else if (user) {
+      if (role === 'admin') {
+        toast({
+          title: "Admin Restriction",
+          description: "Administrators cannot make service requests.",
+          variant: "default",
+        });
+        return;
+      }
       setCurrentStep('details');
     }
   };
@@ -265,10 +274,12 @@ export default function RoadsideRescuePage() {
                 size="lg" 
                 className="w-full text-lg py-7 bg-accent hover:bg-accent/90 text-accent-foreground" 
                 onClick={handleInitialAction}
-                disabled={authLoading || !isFirebaseReady}
+                disabled={authLoading || !isFirebaseReady || (user && role === 'admin')}
               >
                 {authLoading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : 
-                  !user ? <><LogIn className="mr-2 h-5 w-5" /> Login to Request</> : "Request Assistance Now"
+                  !user ? <><LogIn className="mr-2 h-5 w-5" /> Login to Request</> : 
+                  role === 'admin' ? <><Ban className="mr-2 h-5 w-5" /> Admin Cannot Request</> : 
+                  "Request Assistance Now"
                 }
               </Button>
             </CardFooter>
@@ -278,6 +289,11 @@ export default function RoadsideRescuePage() {
         if (!user && isFirebaseReady) { 
           router.push('/login?redirect=/');
           return <div className="flex-grow flex items-center justify-center"><Loader2 className="h-12 w-12 animate-spin text-primary" /><p className="ml-3">Redirecting to login...</p></div>;
+        }
+        if (role === 'admin' && user) { // Double check admin restriction here too
+            toast({ title: "Admin Restriction", description: "Administrators cannot make service requests.", variant: "default"});
+            resetApp(); // Go back to initial step
+            return null; // Or a message component
         }
         if (!isFirebaseReady && !authLoading) { // Check authLoading here too
              return (
@@ -473,3 +489,4 @@ export default function RoadsideRescuePage() {
     </div>
   );
 }
+
