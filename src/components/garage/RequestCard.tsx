@@ -1,12 +1,12 @@
+
 // src/components/garage/RequestCard.tsx
 "use client";
 
 import type { FC } from 'react';
 import type { ServiceRequest } from '@/types';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { MapPin, User, Phone, AlertTriangle, Wrench, CalendarDays, CheckCircle, Send, XCircle, Hourglass } from 'lucide-react';
+import { MapPin, User, Phone, Wrench, CheckCircle, Send, XCircle, Hourglass, CarIcon } from 'lucide-react'; // Added CarIcon
 import {
   Select,
   SelectContent,
@@ -60,6 +60,17 @@ const RequestCard: FC<RequestCardProps> = ({ request, onStatusChange }) => {
           <h4 className="font-semibold text-base mb-1">Issue: {request.issueSummary}</h4>
           <p className="text-muted-foreground text-xs italic">Details: {request.issueDescription || "Not provided"}</p>
         </div>
+        {request.vehicleInfo && (
+          <div className="pt-2 border-t mt-2">
+            <h5 className="font-medium text-sm mb-1">Vehicle Information:</h5>
+            <div className="flex items-center text-xs text-muted-foreground">
+                <CarIcon className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
+                <span>
+                    {request.vehicleInfo.make} {request.vehicleInfo.model} ({request.vehicleInfo.year}) - Plate: {request.vehicleInfo.licensePlate}
+                </span>
+            </div>
+          </div>
+        )}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 border-t mt-2">
             <div className="space-y-1">
                 <div className="flex items-center">

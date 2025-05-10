@@ -1,3 +1,4 @@
+
 "use client";
 
 import type { FC } from 'react';
@@ -14,21 +15,24 @@ import { Input } from '@/components/ui/input';
 interface IssueFormProps {
   initialDescription?: string;
   initialSummary?: string;
-  onFormSubmit: (description: string, summary: string) => void;
+  onIssueDetailsConfirmed: (description: string, summary: string) => void;
   isLocationAvailable: boolean;
+  isSubmitted: boolean;
 }
 
 const IssueForm: FC<IssueFormProps> = ({
   initialDescription = '',
   initialSummary = '',
-  onFormSubmit,
+  onIssueDetailsConfirmed,
   isLocationAvailable,
+  isSubmitted,
 }) => {
   const [description, setDescription] = useState(initialDescription);
   const [summary, setSummary] = useState(initialSummary);
   const [isLoadingSummary, setIsLoadingSummary] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
-  const [isEditingSummary, setIsEditingSummary] = useState(false);
+  const [isEditingSummary, setIsEditingSummary] = useState(!initialSummary);
+
 
   const handleSuggestSummary = async () => {
     if (!description.trim()) {
@@ -47,87 +51,113 @@ const IssueForm: FC<IssueFormProps> = ({
     setIsLoadingSummary(false);
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
     if(description.trim() && summary.trim()){
-      onFormSubmit(description, summary);
+      onIssueDetailsConfirmed(description, summary);
     } else if (description.trim() && !summary.trim()) {
       // If no summary but description exists, use description as summary
-      onFormSubmit(description, description.substring(0, 50) + (description.length > 50 ? '...' : ''));
+      const autoSummary = description.substring(0, 50) + (description.length > 50 ? '...' : '');
+      setSummary(autoSummary);
+      onIssueDetailsConfirmed(description, autoSummary);
     }
   };
   
-  const canSubmit = isLocationAvailable && description.trim() && summary.trim();
+  const canConfirm = isLocationAvailable && description.trim() && summary.trim();
 
   return (
     <Card className="w-full shadow-md">
       <CardHeader>
-        <CardTitle className="text-xl">What's the Issue?</CardTitle>
-        <CardDescription>Describe the problem you're facing. Our AI can help suggest a common issue type.</CardDescription>
+        <CardTitle className="text-xl">2. Issue Details</CardTitle>
+        <CardDescription>Describe the problem. Our AI can help suggest a common issue type.</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="space-y-1.5">
-          <Label htmlFor="issueDescription" className="font-medium">Detailed Description</Label>
-          <Textarea
-            id="issueDescription"
-            placeholder="e.g., My car won't start and makes a clicking sound when I turn the key. The battery light was on yesterday."
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={5}
-            className="text-base"
-          />
-        </div>
-        
-        <Button onClick={handleSuggestSummary} disabled={isLoadingSummary || !description.trim()} variant="outline" className="w-full">
-          {isLoadingSummary ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
-          {isLoadingSummary ? 'Analyzing Issue...' : 'Suggest Issue Type (AI)'}
-        </Button>
-
-        {summaryError && (
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Suggestion Error</AlertTitle>
-            <AlertDescription>{summaryError}</AlertDescription>
-          </Alert>
-        )}
-
-        {(summary || isEditingSummary) && !summaryError && (
-          <div className="space-y-1.5 pt-2">
-            <Label htmlFor="issueSummary" className="font-medium">Issue Summary (e.g., Flat Tire, Dead Battery)</Label>
-            <div className="flex items-center gap-2">
-              <Input
-                id="issueSummary"
-                value={summary}
-                onChange={(e) => setSummary(e.target.value)}
-                placeholder="Enter or confirm issue summary"
-                disabled={!isEditingSummary && !!summary}
-                className="text-base flex-grow"
-              />
-              <Button variant="ghost" size="icon" onClick={() => setIsEditingSummary(!isEditingSummary)} title={isEditingSummary ? "Confirm Summary" : "Edit Summary"}>
-                {isEditingSummary ? <Check className="h-5 w-5 text-green-500" /> : <Edit3 className="h-5 w-5" />}
-              </Button>
-            </div>
-            {!isEditingSummary && summary && (
-              <p className="text-xs text-muted-foreground">AI Suggestion: "{summary}". Click edit icon to change.</p>
-            )}
+      <form onSubmit={handleSubmit}>
+        <CardContent className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="issueDescription" className="font-medium">Detailed Description</Label>
+            <Textarea
+              id="issueDescription"
+              placeholder="e.g., My car won't start and makes a clicking sound..."
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={4}
+              className="text-base"
+              disabled={isSubmitted}
+            />
           </div>
-        )}
-      </CardContent>
-      <CardFooter className="flex flex-col gap-2">
-        <Button onClick={handleSubmit} disabled={!canSubmit} className="w-full bg-accent hover:bg-accent/90 text-accent-foreground text-base py-6" size="lg">
-          Find Service Providers
-        </Button>
-        {!isLocationAvailable && (
-          <p className="text-xs text-destructive text-center w-full">Please provide your location to find providers.</p>
-        )}
-        {isLocationAvailable && !description.trim() && (
-           <p className="text-xs text-destructive text-center w-full">Please describe your issue.</p>
-        )}
-         {isLocationAvailable && description.trim() && !summary.trim() && (
-           <p className="text-xs text-orange-600 text-center w-full">Please provide or confirm an issue summary.</p>
-        )}
-      </CardFooter>
+          
+          <Button 
+            type="button" 
+            onClick={handleSuggestSummary} 
+            disabled={isLoadingSummary || !description.trim() || isSubmitted} 
+            variant="outline" 
+            className="w-full"
+          >
+            {isLoadingSummary ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+            {isLoadingSummary ? 'Analyzing...' : 'Suggest Issue Type (AI)'}
+          </Button>
+
+          {summaryError && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Suggestion Error</AlertTitle>
+              <AlertDescription>{summaryError}</AlertDescription>
+            </Alert>
+          )}
+
+          {(summary || isEditingSummary) && !summaryError && (
+            <div className="space-y-1.5 pt-2">
+              <Label htmlFor="issueSummary" className="font-medium">Issue Summary (e.g., Flat Tire)</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="issueSummary"
+                  value={summary}
+                  onChange={(e) => setSummary(e.target.value)}
+                  placeholder="Enter or confirm issue summary"
+                  disabled={(!isEditingSummary && !!summary) || isSubmitted}
+                  className="text-base flex-grow"
+                  required
+                />
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  onClick={() => setIsEditingSummary(!isEditingSummary)} 
+                  title={isEditingSummary ? "Confirm Summary Text" : "Edit Summary Text"}
+                  type="button"
+                  disabled={isSubmitted}
+                >
+                  {isEditingSummary ? <Check className="h-5 w-5 text-green-500" /> : <Edit3 className="h-5 w-5" />}
+                </Button>
+              </div>
+              {!isEditingSummary && summary && !isSubmitted && (
+                <p className="text-xs text-muted-foreground">AI Suggestion: "{summary}". Click edit icon to change.</p>
+              )}
+            </div>
+          )}
+        </CardContent>
+        <CardFooter className="flex flex-col gap-2">
+          <Button 
+            type="submit" 
+            disabled={!canConfirm || isSubmitted} 
+            className="w-full"
+          >
+            {isSubmitted ? <Check className="mr-2 h-4 w-4"/> : null}
+            {isSubmitted ? 'Issue Details Confirmed' : 'Confirm Issue Details'}
+          </Button>
+          {!isLocationAvailable && (
+            <p className="text-xs text-destructive text-center w-full">Provide location to confirm issue.</p>
+          )}
+          {isLocationAvailable && !description.trim() && !isSubmitted && (
+             <p className="text-xs text-destructive text-center w-full">Please describe your issue.</p>
+          )}
+           {isLocationAvailable && description.trim() && !summary.trim() && !isSubmitted && (
+             <p className="text-xs text-orange-600 text-center w-full">Provide or confirm an issue summary.</p>
+          )}
+        </CardFooter>
+      </form>
     </Card>
   );
 };
 
 export default IssueForm;
+

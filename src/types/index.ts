@@ -15,6 +15,13 @@ export interface ServiceProvider {
   distanceKm?: number; // Optional, calculated dynamically
 }
 
+export interface VehicleInfo {
+  make: string;
+  model: string;
+  year: string;
+  licensePlate: string;
+}
+
 export interface ServiceRequest {
   id: string;
   requestId: string; // A more user-friendly request ID
@@ -26,6 +33,7 @@ export interface ServiceRequest {
   status: 'Pending' | 'Accepted' | 'In Progress' | 'Completed' | 'Cancelled';
   userName: string; // User's name, from auth or manual input
   userPhone: string; // User's contact, from auth or manual input
+  vehicleInfo?: VehicleInfo; // Added vehicle information
 }
 
 // Optional: Define a user profile type if you store more user data
@@ -37,3 +45,4 @@ export interface UserProfile {
   phoneNumber?: string | null;
   // Add any other custom fields you might store
 }
+

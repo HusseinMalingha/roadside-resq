@@ -2,15 +2,16 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import type { Location, ServiceProvider, ServiceRequest as ServiceRequestType } from '@/types'; // Renamed to avoid conflict
+import type { Location, ServiceProvider, ServiceRequest as ServiceRequestType, VehicleInfo } from '@/types';
 import LocationRequester from '@/components/LocationRequester';
 import IssueForm from '@/components/IssueForm';
 import ProviderList from '@/components/ProviderList';
 import MapDisplay from '@/components/MapDisplay';
+import VehicleInfoForm from '@/components/VehicleInfoForm'; // Import VehicleInfoForm
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { CheckCircle, MessageSquareHeart, Car, Clock, Loader2, ArrowLeft, Home, RefreshCw, LogIn, AlertCircle as AlertCircleIcon } from 'lucide-react'; // Renamed AlertCircle to AlertCircleIcon
+import { CheckCircle, MessageSquareHeart, Car, Clock, Loader2, ArrowLeft, Home, RefreshCw, LogIn, AlertCircle as AlertCircleIcon, Send } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
@@ -25,16 +26,23 @@ export default function RoadsideRescuePage() {
   const [userLocation, setUserLocation] = useState<Location | null>(null);
   const [issueDescription, setIssueDescription] = useState<string>('');
   const [confirmedIssueSummary, setConfirmedIssueSummary] = useState<string>('');
+  const [vehicleInfo, setVehicleInfo] = useState<VehicleInfo | null>(null); // State for vehicle info
   const [selectedProvider, setSelectedProvider] = useState<ServiceProvider | null>(null);
   const [providerETA, setProviderETA] = useState<number | null>(null);
   const [providerCurrentLocation, setProviderCurrentLocation] = useState<Location | null>(null);
   
   const [serviceRequest, setServiceRequest] = useState<ServiceRequestType | null>(null);
 
+  // Submission states for sub-forms
+  const [isLocationConfirmed, setIsLocationConfirmed] = useState(false);
+  const [isIssueConfirmed, setIsIssueConfirmed] = useState(false);
+  const [isVehicleInfoConfirmed, setIsVehicleInfoConfirmed] = useState(false);
+
   const { toast } = useToast();
 
   const handleLocationAcquired = useCallback((location: Location) => {
     setUserLocation(location);
+    setIsLocationConfirmed(true);
     toast({
       title: "Location Acquired!",
       description: `Your location is set: ${location.lat.toFixed(4)}, ${location.lng.toFixed(4)}`,
@@ -42,14 +50,39 @@ export default function RoadsideRescuePage() {
     });
   }, [toast]);
 
-  const handleIssueFormSubmit = (description: string, summary: string) => {
+  const handleIssueDetailsConfirmed = (description: string, summary: string) => {
     setIssueDescription(description);
     setConfirmedIssueSummary(summary);
-    setCurrentStep('providers');
+    setIsIssueConfirmed(true);
     toast({
-      title: "Details Confirmed",
-      description: `Looking for providers for: ${summary}`,
+      title: "Issue Details Confirmed",
+      description: `Issue: ${summary}`,
     });
+  };
+
+  const handleVehicleInfoSubmit = (info: VehicleInfo) => {
+    setVehicleInfo(info);
+    setIsVehicleInfoConfirmed(true);
+    toast({
+      title: "Vehicle Info Confirmed",
+      description: `${info.make} ${info.model} (${info.licensePlate})`,
+    });
+  };
+
+  const handleProceedToProviders = () => {
+    if (isLocationConfirmed && isIssueConfirmed && isVehicleInfoConfirmed) {
+      setCurrentStep('providers');
+      toast({
+        title: "Finding Providers",
+        description: `Looking for help for: ${confirmedIssueSummary}`,
+      });
+    } else {
+      toast({
+        title: "Incomplete Details",
+        description: "Please confirm location, issue, and vehicle details before proceeding.",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleSelectProvider = (provider: ServiceProvider) => {
@@ -57,13 +90,14 @@ export default function RoadsideRescuePage() {
     setProviderETA(provider.etaMinutes);
     setProviderCurrentLocation(provider.currentLocation);
     
-    if (userLocation && user) {
+    if (userLocation && user && vehicleInfo) { // Ensure vehicleInfo is also present
       const newRequest: ServiceRequestType = {
         id: `req-${Date.now()}`, 
         requestId: `RR-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
         userLocation: userLocation,
         issueDescription: issueDescription,
         issueSummary: confirmedIssueSummary,
+        vehicleInfo: vehicleInfo, // Add vehicle info to the request
         selectedProvider: provider,
         requestTime: new Date(),
         status: 'Pending', 
@@ -86,10 +120,14 @@ export default function RoadsideRescuePage() {
     setUserLocation(null);
     setIssueDescription('');
     setConfirmedIssueSummary('');
+    setVehicleInfo(null); // Reset vehicle info
     setSelectedProvider(null);
     setProviderETA(null);
     setProviderCurrentLocation(null);
     setServiceRequest(null);
+    setIsLocationConfirmed(false);
+    setIsIssueConfirmed(false);
+    setIsVehicleInfoConfirmed(false);
   };
   
   const handleInitialAction = () => {
@@ -129,8 +167,7 @@ export default function RoadsideRescuePage() {
           });
           return;
         }
-
-        // Basic location update simulation
+        
         if (userLocation && currentProviderLoc) {
             const latDiff = userLocation.lat - currentProviderLoc.lat;
             const lngDiff = userLocation.lng - currentProviderLoc.lng;
@@ -142,13 +179,12 @@ export default function RoadsideRescuePage() {
             };
             setProviderCurrentLocation(currentProviderLoc);
         }
-
-
       }, 2000); 
     }
     return () => clearInterval(trackingInterval);
   }, [currentStep, selectedProvider, userLocation, providerETA, providerCurrentLocation, toast]);
 
+  const allDetailsProvided = isLocationConfirmed && isIssueConfirmed && isVehicleInfoConfirmed;
 
   const renderStepContent = () => {
     if (authLoading && currentStep === 'initial') {
@@ -216,42 +252,59 @@ export default function RoadsideRescuePage() {
         }
         return (
           <div className="w-full max-w-2xl space-y-8 animate-slideUp">
-            <h1 className="text-3xl font-semibold text-center mb-2">Request Details</h1>
-            <p className="text-muted-foreground text-center mb-6">Please provide your location and describe the issue.</p>
+            <div className="text-center">
+              <h1 className="text-3xl font-semibold mb-2">Request Assistance</h1>
+              <p className="text-muted-foreground mb-6">Complete the steps below to find help.</p>
+            </div>
             
-            <Card>
-              <CardHeader><CardTitle className="text-xl">1. Your Location</CardTitle></CardHeader>
-              <CardContent>
-                <LocationRequester onLocationAcquired={handleLocationAcquired} userLocation={userLocation} />
-              </CardContent>
-            </Card>
-
+            <LocationRequester onLocationAcquired={handleLocationAcquired} userLocation={userLocation} />
+            
             {userLocation && (
               <div className="mt-4 animate-fadeIn">
                  <MapDisplay userLocation={userLocation} title="Your Current Location" />
               </div>
             )}
             
-            <Card className="mt-6">
-              <CardHeader><CardTitle className="text-xl">2. Issue Details</CardTitle></CardHeader>
-              <CardContent>
-                <IssueForm
-                  onFormSubmit={handleIssueFormSubmit}
-                  isLocationAvailable={!!userLocation}
-                  initialDescription={issueDescription}
-                  initialSummary={confirmedIssueSummary}
-                />
-              </CardContent>
-            </Card>
-             <Button variant="outline" onClick={resetApp} className="w-full mt-4">
-              <ArrowLeft className="mr-2 h-4 w-4" /> Start Over
-            </Button>
+            <IssueForm
+              onIssueDetailsConfirmed={handleIssueDetailsConfirmed}
+              isLocationAvailable={!!userLocation}
+              initialDescription={issueDescription}
+              initialSummary={confirmedIssueSummary}
+              isSubmitted={isIssueConfirmed}
+            />
+
+            <VehicleInfoForm 
+              onVehicleInfoSubmit={handleVehicleInfoSubmit}
+              initialData={vehicleInfo || {}}
+              isSubmitted={isVehicleInfoConfirmed}
+            />
+            
+            <div className="space-y-3 pt-4">
+              <Button 
+                onClick={handleProceedToProviders} 
+                disabled={!allDetailsProvided} 
+                className="w-full bg-primary hover:bg-primary/90 text-primary-foreground text-lg py-7" 
+                size="lg"
+              >
+                <Send className="mr-2 h-5 w-5" />
+                Find Service Providers
+              </Button>
+              {!allDetailsProvided && (
+                <p className="text-xs text-orange-600 text-center">
+                  Please confirm location, issue, and vehicle details to proceed.
+                </p>
+              )}
+               <Button variant="outline" onClick={resetApp} className="w-full">
+                <ArrowLeft className="mr-2 h-4 w-4" /> Start Over
+              </Button>
+            </div>
+
           </div>
         );
       case 'providers':
         return (
           <div className="w-full animate-slideUp flex flex-col flex-grow">
-             <Button variant="outline" onClick={() => setCurrentStep('details')} className="mb-6 flex-shrink-0">
+             <Button variant="outline" onClick={() => setCurrentStep('details')} className="mb-6 flex-shrink-0 self-start">
               <ArrowLeft className="mr-2 h-4 w-4" /> Back to Details
             </Button>
             <ProviderList
@@ -265,12 +318,12 @@ export default function RoadsideRescuePage() {
         if (!selectedProvider || !serviceRequest) return <p>Error: No provider selected or request not created.</p>;
         return (
           <div className="w-full max-w-2xl space-y-6 animate-fadeIn">
-            <Button variant="outline" onClick={() => setCurrentStep('providers')} className="mb-2">
+            <Button variant="outline" onClick={() => setCurrentStep('providers')} className="mb-2 self-start">
               <ArrowLeft className="mr-2 h-4 w-4" /> Change Provider
             </Button>
             <Card className="shadow-xl">
               <CardHeader>
-                <CardTitle className="text-2xl">Tracking Your Assistance (Request ID: {serviceRequest.requestId})</CardTitle>
+                <CardTitle className="text-2xl">Tracking Your Assistance (ID: {serviceRequest.requestId})</CardTitle>
                 <CardDescription>{selectedProvider.name} is on the way!</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -278,8 +331,13 @@ export default function RoadsideRescuePage() {
                 <div className="p-4 border rounded-lg bg-card">
                   <h3 className="text-lg font-semibold mb-1">{selectedProvider.name}</h3>
                   <p className="text-sm text-muted-foreground">Contact: {selectedProvider.phone}</p>
-                   <p className="text-sm text-muted-foreground">Your Name: {serviceRequest.userName}</p>
-                   <p className="text-sm text-muted-foreground">Your Phone: {serviceRequest.userPhone}</p>
+                   <p className="text-sm text-muted-foreground">Client: {serviceRequest.userName}</p>
+                   <p className="text-sm text-muted-foreground">Contact: {serviceRequest.userPhone}</p>
+                   {serviceRequest.vehicleInfo && (
+                     <p className="text-sm text-muted-foreground">
+                       Vehicle: {serviceRequest.vehicleInfo.make} {serviceRequest.vehicleInfo.model} ({serviceRequest.vehicleInfo.year}) - {serviceRequest.vehicleInfo.licensePlate}
+                     </p>
+                   )}
                   <div className="mt-3 pt-3 border-t">
                   {providerETA !== null && providerETA > 0 ? (
                     <div className="flex items-center text-xl font-semibold text-primary">
@@ -316,6 +374,11 @@ export default function RoadsideRescuePage() {
             </CardHeader>
             <CardContent>
               <p className="mb-6">We hope you get back on your way safely and quickly!</p>
+              {serviceRequest.vehicleInfo && (
+                  <p className="text-sm text-muted-foreground mb-3">
+                    For your {serviceRequest.vehicleInfo.make} {serviceRequest.vehicleInfo.model}.
+                  </p>
+              )}
               <Alert variant="default">
                 <CheckCircle className="h-4 w-4 text-green-500" />
                 <AlertTitle>Confirmation</AlertTitle>
@@ -345,5 +408,3 @@ export default function RoadsideRescuePage() {
     </div>
   );
 }
-
-    
