@@ -1,4 +1,3 @@
-
 "use client";
 
 import type { ReactNode, FC } from 'react';
@@ -48,7 +47,7 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
   const { toast } = useToast();
 
   useEffect(() => {
-    if (firebaseAuthInstance && firestoreInstance) { // Check for Firestore instance as well
+    if (firebaseAuthInstance && firestoreInstance) {
       setIsFirebaseReady(true);
       const unsubscribe = onAuthStateChanged(firebaseAuthInstance, async (currentUser) => {
         setUser(currentUser);
@@ -81,7 +80,7 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
       return () => unsubscribe();
     } else {
       setIsFirebaseReady(false);
-      setLoading(false);
+      setLoading(false); // Ensure loading is false if Firebase isn't ready
       if (typeof window !== 'undefined') {
         toast({
           title: "Firebase Not Configured",
@@ -92,7 +91,8 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
       }
       console.warn("AuthContext: Firebase auth or Firestore instance is not available. Auth features will be disabled.");
     }
-  }, [toast]); // Removed firestoreInstance from dependency array as it's stable after init
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Empty dependency array: run once on mount
 
   const signInWithGoogle = async () => {
     if (!firebaseAuthInstance || !isFirebaseReady) {
@@ -116,12 +116,13 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
   
   const setupRecaptcha = useCallback((elementId: string): RecaptchaVerifier | null => {
     if (!firebaseAuthInstance || !isFirebaseReady) {
-      console.error("setupRecaptcha: Firebase not configured. Cannot setup reCAPTCHA.");
+      console.error("setupRecaptcha: Firebase not configured or not ready. Cannot setup reCAPTCHA.");
       return null;
     }
     if (typeof window !== 'undefined') {
       const recaptchaContainer = document.getElementById(elementId);
       if (recaptchaContainer) {
+        // Ensure container is empty before rendering new verifier
         while (recaptchaContainer.firstChild) {
             recaptchaContainer.removeChild(recaptchaContainer.firstChild);
         }
@@ -179,7 +180,9 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
       toast({ title: "Error Sending OTP", description: errorMessage, variant: "destructive" });
       
       try {
-        appVerifier.clear(); 
+        // Attempt to clear the verifier if it exists and has a clear method.
+        // @ts-ignore Property 'clear' does not exist on type 'RecaptchaVerifier'. It's an internal method.
+        if (appVerifier && typeof appVerifier.clear === 'function') appVerifier.clear(); 
       } catch(e) {
         console.warn("Could not clear appVerifier during OTP send error:", e);
       }
@@ -249,3 +252,4 @@ export const useAuth = (): AuthContextType => {
   }
   return context;
 };
+

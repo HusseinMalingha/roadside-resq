@@ -1,4 +1,3 @@
-
 // src/app/garage-admin/page.tsx
 "use client";
 
@@ -32,7 +31,7 @@ import { listenToGarages, getAllGarages } from '@/services/garageService';
 const DEFAULT_VEHICLE_INFO: VehicleInfo = { make: 'Unknown', model: 'Unknown', year: 'N/A', licensePlate: 'N/A' };
 
 export default function GarageAdminPage() {
-  const { user, role, loading: authLoading } = useAuth();
+  const { user, role, loading: authLoading, isFirebaseReady } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
 
@@ -48,6 +47,10 @@ export default function GarageAdminPage() {
   const [requestToAssign, setRequestToAssign] = useState<ServiceRequest | null>(null);
 
   const loadInitialData = useCallback(async () => {
+    if (!isFirebaseReady) {
+      setIsLoadingData(false); // Firebase not ready, don't attempt to load
+      return;
+    }
     setIsLoadingData(true);
     try {
       const initialRequests = await getAllRequests(); 
@@ -74,31 +77,37 @@ export default function GarageAdminPage() {
         });
         const currentPendingCount = initialRequests.filter(req => req.status === 'Pending').length;
         prevPendingCountRef.current = currentPendingCount;
-        initialLoadRef.current = false; // Mark initial load as complete
+        initialLoadRef.current = false; 
       }
     } catch (error) {
       console.error("Error loading initial data:", error);
       toast({ title: "Error Loading Data", description: "Could not fetch initial records from the database.", variant: "destructive" });
       if (initialLoadRef.current) {
-        initialLoadRef.current = false; // Also mark as complete on error to prevent re-runs
+        initialLoadRef.current = false; 
       }
     } finally {
       setIsLoadingData(false);
     }
-  }, [role, toast]); 
+  }, [role, toast, isFirebaseReady]); 
 
  useEffect(() => {
-    if (!authLoading && !user) {
-      router.push('/login?redirect=/garage-admin');
-    } else if (user && initialLoadRef.current) { 
-      loadInitialData();
+    if (!authLoading) { // Auth state is resolved
+      if (!user && isFirebaseReady) { // If Firebase is ready and no user, redirect
+        router.push('/login?redirect=/garage-admin');
+      } else if (user && isFirebaseReady && initialLoadRef.current) { // If user and Firebase ready, load data
+        loadInitialData();
+      } else if (!isFirebaseReady && initialLoadRef.current) {
+        // Firebase not ready, stop loading spinner, AuthContext will show a toast
+        setIsLoadingData(false);
+        initialLoadRef.current = false;
+      }
     }
-  }, [authLoading, user, router, loadInitialData]);
+  }, [authLoading, user, router, loadInitialData, isFirebaseReady]);
 
 
   // Listener for service requests
   useEffect(() => {
-    if (!user) return; 
+    if (!user || !isFirebaseReady) return; 
     const unsubscribeRequests = listenToRequests((updatedRequests) => {
       const processedRequests = updatedRequests.map(r => ({
         ...r,
@@ -106,7 +115,6 @@ export default function GarageAdminPage() {
       })).sort((a, b) => (new Date(b.requestTime)).getTime() - (new Date(a.requestTime)).getTime());
       
       const currentPendingCount = processedRequests.filter(req => req.status === 'Pending').length;
-      // Only show toast if initialLoadRef is false (meaning initial data has been processed)
       if (!initialLoadRef.current && currentPendingCount > prevPendingCountRef.current) {
          toast({
             title: "🔔 New Pending Request(s)!",
@@ -126,21 +134,21 @@ export default function GarageAdminPage() {
       if (isLoadingData && !initialLoadRef.current) setIsLoadingData(false); 
     });
     return () => unsubscribeRequests();
-  }, [user, toast, isLoadingData]); 
+  }, [user, toast, isLoadingData, isFirebaseReady]); 
 
   // Listener for staff members
   useEffect(() => {
-    if (!user || (role !== 'admin' && role !== 'mechanic' && role !== 'customer_relations')) return;
+    if (!user || (role !== 'admin' && role !== 'mechanic' && role !== 'customer_relations') || !isFirebaseReady) return;
     const unsubscribeStaff = listenToStaffMembers(setStaffMembers);
     return () => unsubscribeStaff();
-  }, [user, role]);
+  }, [user, role, isFirebaseReady]);
 
   // Listener for garage providers
   useEffect(() => {
-    if (!user) return;
+    if (!user || !isFirebaseReady) return;
     const unsubscribeGarages = listenToGarages(setGarageProviders);
     return () => unsubscribeGarages();
-  }, [user]);
+  }, [user, isFirebaseReady]);
 
 
   const handleStatusChange = async (requestId: string, newStatus: ServiceRequest['status'], notes?: string, resources?: string) => {
@@ -213,7 +221,7 @@ export default function GarageAdminPage() {
   const assignableMechanics = allMechanics.filter(mech => !occupiedMechanicIds.has(mech.id));
 
   const refreshData = () => { 
-    initialLoadRef.current = true; // Allow loadInitialData to run its full initial logic including success toast
+    initialLoadRef.current = true; 
     loadInitialData(); 
     setSelectedGarage('all');
     setSelectedStatus('all');
@@ -224,7 +232,8 @@ export default function GarageAdminPage() {
     });
   }
 
-  if (authLoading || (isLoadingData && initialLoadRef.current)) {
+  // This covers initial auth check and initial data load check
+  if (authLoading || (isLoadingData && initialLoadRef.current && isFirebaseReady)) {
     return (
       <div className="flex-grow flex items-center justify-center">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -233,7 +242,8 @@ export default function GarageAdminPage() {
     );
   }
 
-  if (!user && !authLoading) {
+  // If auth is resolved, Firebase is ready, but no user
+  if (!user && !authLoading && isFirebaseReady) {
     return (
         <div className="flex-grow flex items-center justify-center">
              <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -241,6 +251,27 @@ export default function GarageAdminPage() {
         </div>
     );
   }
+  
+  // If Firebase is not ready and auth has resolved
+  if (!isFirebaseReady && !authLoading) {
+     return (
+        <div className="flex-grow flex items-center justify-center p-4">
+            <Card className="w-full max-w-md text-center shadow-xl">
+                <CardHeader>
+                    <ShieldAlert className="h-16 w-16 text-destructive mx-auto mb-4" />
+                    <CardTitle>Service Unavailable</CardTitle>
+                    <CardDescription>Cannot connect to services. Please try again later.</CardDescription>
+                </CardHeader>
+                 <CardFooter>
+                    <Button onClick={() => window.location.reload()} className="w-full">
+                        <RefreshCw className="mr-2 h-4 w-4" /> Refresh Page
+                    </Button>
+                </CardFooter>
+            </Card>
+        </div>
+    );
+  }
+
 
   if (role !== 'admin' && role !== 'mechanic' && role !== 'customer_relations') {
     return (
@@ -355,7 +386,7 @@ export default function GarageAdminPage() {
                 Displaying {visibleRequests.length} of {requests.length} total requests. 
                 ({pendingRequestCount} pending)
               </p>
-               {isLoadingData && initialLoadRef.current ? ( 
+               {(isLoadingData && initialLoadRef.current && isFirebaseReady) ? ( 
                 <div className="flex items-center justify-center py-6">
                   <Loader2 className="h-8 w-8 animate-spin text-primary" />
                   <p className="ml-3">Loading requests...</p>

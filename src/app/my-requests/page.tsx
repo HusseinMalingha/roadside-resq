@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect, useState } from 'react';
@@ -9,7 +8,7 @@ import { getUserRequests } from '@/services/requestService'; // Import Firestore
 import type { ServiceRequest } from '@/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Loader2, ListChecks, Home, AlertCircle, Users, Info } from 'lucide-react';
+import { Loader2, ListChecks, Home, AlertCircle, Users, Info, RefreshCw } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import RequestHistoryItem from '@/components/request-history/RequestHistoryItem';
 
@@ -17,31 +16,33 @@ export default function MyRequestsPage() {
   const { user, loading: authLoading, isFirebaseReady } = useAuth();
   const router = useRouter();
   const [userRequests, setUserRequests] = useState<ServiceRequest[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(true); // For data fetching, distinct from authLoading
 
   useEffect(() => {
-    if (!authLoading) {
-      if (!user) {
+    if (!authLoading) { // Auth state has resolved
+      if (!user && isFirebaseReady) { // Firebase ready, but no user
         router.push('/login?redirect=/my-requests');
-      } else {
-        setIsLoading(true);
+      } else if (user && isFirebaseReady) { // Firebase ready and user exists
+        setIsLoading(true); // Start data fetching loader
         getUserRequests(user.uid)
           .then((requests) => {
-            // Sorting is already handled by the service if orderBy is used
             setUserRequests(requests);
           })
           .catch(error => {
             console.error("Failed to fetch user requests:", error);
-            // Optionally, show a toast message for the error
+            // Optionally, show a toast message for the error using useToast()
           })
           .finally(() => {
-            setIsLoading(false);
+            setIsLoading(false); // Stop data fetching loader
           });
+      } else if (!isFirebaseReady) {
+        // Firebase itself is not ready, stop loading, AuthContext will show a global toast.
+        setIsLoading(false);
       }
     }
-  }, [user, authLoading, router]);
+  }, [user, authLoading, router, isFirebaseReady]);
 
-  if (isLoading || authLoading) {
+  if (authLoading || (isLoading && isFirebaseReady)) { // Show loader if auth is loading OR data is loading (and Firebase is ready)
     return (
       <div className="flex-grow flex flex-col items-center justify-center">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -50,7 +51,26 @@ export default function MyRequestsPage() {
     );
   }
 
-  if (!user && !authLoading && isFirebaseReady) {
+  if (!isFirebaseReady && !authLoading) { // Firebase not ready, auth resolved
+     return (
+        <div className="flex-grow flex items-center justify-center p-4">
+            <Card className="w-full max-w-md text-center shadow-xl">
+                <CardHeader>
+                    <AlertCircle className="h-16 w-16 text-destructive mx-auto mb-4" />
+                    <CardTitle>Service Unavailable</CardTitle>
+                    <CardDescription>Cannot connect to services. Please try again later.</CardDescription>
+                </CardHeader>
+                 <CardFooter>
+                    <Button onClick={() => window.location.reload()} className="w-full">
+                        <RefreshCw className="mr-2 h-4 w-4" /> Refresh Page
+                    </Button>
+                </CardFooter>
+            </Card>
+        </div>
+    );
+  }
+
+  if (!user && !authLoading && isFirebaseReady) { // Redirecting state or post-redirect pre-login page display
     return (
         <div className="flex-grow flex flex-col items-center justify-center text-center p-6">
             <Card className="w-full max-w-md shadow-xl">
@@ -92,7 +112,7 @@ export default function MyRequestsPage() {
           </div>
         </CardHeader>
         <CardContent>
-          {userRequests.length === 0 ? (
+          {userRequests.length === 0 && !isLoading ? ( // Also check isLoading to avoid "No requests" flash
             <div className="text-center py-10">
               <Info className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
               <p className="text-xl font-semibold text-muted-foreground">No Past Requests Found</p>
@@ -112,3 +132,4 @@ export default function MyRequestsPage() {
     </div>
   );
 }
+
