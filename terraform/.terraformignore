@@ -1,0 +1,11 @@
+# Ignore common local files and directories
+.DS_Store
+*.log
+*.backup
+*.swp
+
+# Ignore sensitive files if any are generated locally (though tfvars should handle secrets)
+# secrets.tfvars
+
+# Ignore provider-specific lock files if not committed
+.terraform.lock.hcl

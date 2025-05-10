@@ -1,10 +1,11 @@
+"use client"; // Ensure this page and its children are treated as client-side for build
 
 import { Suspense } from 'react';
 import LoginClientPage from './login-client-page';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Loader2 } from 'lucide-react';
 
-export const dynamic = 'force-dynamic'; // Add this line
+export const dynamic = 'force-dynamic'; // Keep to emphasize dynamic nature
 
 function LoginSkeleton() {
   return (
@@ -33,4 +34,3 @@ export default function LoginPageContainer() {
     </Suspense>
   );
 }
-
