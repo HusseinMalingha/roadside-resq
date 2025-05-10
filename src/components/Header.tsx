@@ -1,5 +1,6 @@
 import Link from 'next/link';
-import { LifeBuoy } from 'lucide-react';
+import { LifeBuoy, Wrench } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 const Header = () => {
   return (
@@ -9,7 +10,14 @@ const Header = () => {
           <LifeBuoy className="h-8 w-8" />
           <span>Roadside Rescue</span>
         </Link>
-        {/* Future navigation items can be added here */}
+        <nav>
+          <Link href="/garage-admin" legacyBehavior passHref>
+            <Button variant="ghost" className="text-primary-foreground hover:bg-primary/80">
+              <Wrench className="mr-2 h-5 w-5" />
+              Garage Admin
+            </Button>
+          </Link>
+        </nav>
       </div>
     </header>
   );

@@ -7,14 +7,9 @@ import ProviderCard from './ProviderCard';
 import type { ServiceProvider, Location as UserLocationType } from '@/types';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { SearchX, Loader2, ListFilter } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-
-interface ProviderListProps {
-  userLocation: UserLocationType | null;
-  issueType: string;
-  onSelectProvider: (provider: ServiceProvider) => void;
-}
+import { SearchX, Loader2, ListFilter, MapPinned } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 
 const MOCK_PROVIDERS: ServiceProvider[] = [
   { 
@@ -22,49 +17,73 @@ const MOCK_PROVIDERS: ServiceProvider[] = [
     name: 'Auto Xpress - Kampala Central', 
     phone: '(256) 772-123456', 
     etaMinutes: 15, 
-    currentLocation: { lat: 0.3136, lng: 32.5811 }, // Approx. Kampala
-    servicesOffered: ['Tire Services', 'Battery Replacement', 'Oil Change', 'Brake Services'] 
+    currentLocation: { lat: 0.3136, lng: 32.5811 }, 
+    generalLocation: "Kampala Central",
+    servicesOffered: ['Tire Services', 'Battery Replacement', 'Oil Change', 'Brake Services', 'Flat tire', 'Dead battery'] 
   },
   { 
     id: 'ax2', 
     name: 'Auto Xpress - Lugogo', 
     phone: '(256) 772-234567', 
     etaMinutes: 25, 
-    currentLocation: { lat: 0.3200, lng: 32.6000 }, // Approx. Lugogo
-    servicesOffered: ['Suspension Work', 'Diagnostics', 'Tire Alignment', 'Jump Start'] 
+    currentLocation: { lat: 0.3200, lng: 32.6000 }, 
+    generalLocation: "Lugogo, Kampala",
+    servicesOffered: ['Suspension Work', 'Diagnostics', 'Tire Alignment', 'Jump Start', 'Engine failure'] 
   },
   { 
     id: 'ax3', 
     name: 'Auto Xpress - Ntinda', 
     phone: '(256) 772-345678', 
     etaMinutes: 20, 
-    currentLocation: { lat: 0.3450, lng: 32.6120 }, // Approx. Ntinda
-    servicesOffered: ['Fuel Delivery (Emergency)', 'Battery Testing', 'Tire Puncture Repair', 'Minor Mechanical Repairs'] 
+    currentLocation: { lat: 0.3450, lng: 32.6120 }, 
+    generalLocation: "Ntinda, Kampala",
+    servicesOffered: ['Fuel Delivery (Emergency)', 'Battery Testing', 'Tire Puncture Repair', 'Minor Mechanical Repairs', 'Lockout', 'Fuel delivery'] 
   },
   { 
     id: 'ax4', 
     name: 'Auto Xpress - Acacia Mall', 
     phone: '(256) 772-456789', 
     etaMinutes: 30, 
-    currentLocation: { lat: 0.3312, lng: 32.5900 }, // Approx. Acacia Mall area
+    currentLocation: { lat: 0.3312, lng: 32.5900 }, 
+    generalLocation: "Kisementi, Kampala",
     servicesOffered: ['Tire Sales & Fitting', 'Oil and Filter Change', 'Wiper Blade Replacement', 'Lockout Assistance (Limited)'] 
   },
   { 
     id: 'ax5', 
-    name: 'Auto Xpress - Entebbe Road', 
+    name: 'Auto Xpress - Entebbe Town', 
     phone: '(256) 772-567890', 
-    etaMinutes: 18, 
-    currentLocation: { lat: 0.2800, lng: 32.5500 }, // Approx. Entebbe Road
-    servicesOffered: ['Battery Jump Start', 'Tire Inflation', 'Fluid Top-up', 'Brake Pad Replacement'] 
+    etaMinutes: 45, // Assuming further away if user is in Kampala
+    currentLocation: { lat: 0.0500, lng: 32.4600 }, // Approx. Entebbe
+    generalLocation: "Entebbe Town",
+    servicesOffered: ['Battery Jump Start', 'Tire Inflation', 'Fluid Top-up', 'Brake Pad Replacement', 'Flat tire'] 
   },
   { 
     id: 'ax6', 
     name: 'Auto Xpress - Nakawa', 
     phone: '(256) 772-678901', 
     etaMinutes: 22, 
-    currentLocation: { lat: 0.3300, lng: 32.6150 }, // Approx. Nakawa
-    servicesOffered: ['Full Service Maintenance', 'Tire Balancing', 'Air Conditioning Recharge', 'Diagnostics'] 
+    currentLocation: { lat: 0.3300, lng: 32.6150 }, 
+    generalLocation: "Nakawa, Kampala",
+    servicesOffered: ['Full Service Maintenance', 'Tire Balancing', 'Air Conditioning Recharge', 'Diagnostics', 'Engine failure'] 
   },
+   { 
+    id: 'ax7', 
+    name: 'Auto Xpress - Mukono Town', 
+    phone: '(256) 773-112233', 
+    etaMinutes: 55, // Assuming further away
+    currentLocation: { lat: 0.3550, lng: 32.7500 }, // Approx. Mukono
+    generalLocation: "Mukono Town",
+    servicesOffered: ['Tire Services', 'Battery Replacement', 'Minor Mechanical Repairs', 'Jump Start'] 
+  },
+  { 
+    id: 'ax8', 
+    name: 'Auto Xpress - Jinja City', 
+    phone: '(256) 774-445566', 
+    etaMinutes: 90, // Assuming further away
+    currentLocation: { lat: 0.4320, lng: 33.2030 }, // Approx. Jinja
+    generalLocation: "Jinja City",
+    servicesOffered: ['Full Service Maintenance', 'Diagnostics', 'Tire Alignment', 'Brake Services'] 
+  }
 ];
 
 function calculateDistance(loc1: UserLocationType, loc2: UserLocationType): number {
@@ -81,22 +100,19 @@ function calculateDistance(loc1: UserLocationType, loc2: UserLocationType): numb
 
 const ProviderList: FC<ProviderListProps> = ({ userLocation, issueType, onSelectProvider }) => {
   const [isLoading, setIsLoading] = useState(true);
-  const [providers, setProviders] = useState<ServiceProvider[]>([]);
+  const [displayedProviders, setDisplayedProviders] = useState<ServiceProvider[]>([]);
+  const [noSpecificMatch, setNoSpecificMatch] = useState(false);
 
   useEffect(() => {
     setIsLoading(true);
-    // Simulate API call delay
+    setNoSpecificMatch(false);
+    
     setTimeout(() => {
-      let filteredProviders = MOCK_PROVIDERS;
+      let primaryFilteredProviders = MOCK_PROVIDERS;
       
-      // Filter by issueType if provided
       if (issueType && issueType.trim() !== "") {
         const lowerIssueType = issueType.toLowerCase();
-        // Check if any service offered by the provider (partially) matches the issue type,
-        // or if the issue type (partially) matches any service offered.
-        // This makes matching more flexible e.g. "flat tire" matches "Tire Services"
-        // and "Tire Repair" service matches "tire" issue.
-        filteredProviders = MOCK_PROVIDERS.filter(p => 
+        primaryFilteredProviders = MOCK_PROVIDERS.filter(p => 
           p.servicesOffered.some(service => 
             service.toLowerCase().includes(lowerIssueType) || 
             lowerIssueType.includes(service.toLowerCase())
@@ -104,18 +120,28 @@ const ProviderList: FC<ProviderListProps> = ({ userLocation, issueType, onSelect
         );
       }
       
-      // Calculate distance and sort if userLocation is available
       if (userLocation) {
-        filteredProviders = filteredProviders.map(p => ({
+        primaryFilteredProviders = primaryFilteredProviders.map(p => ({
           ...p,
           distanceKm: calculateDistance(userLocation, p.currentLocation)
         })).sort((a,b) => (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity));
       } else {
-         // Sort by ETA if no location, and ensure distanceKm is undefined
-         filteredProviders = filteredProviders.map(p => ({ ...p, distanceKm: undefined })).sort((a,b) => a.etaMinutes - b.etaMinutes);
+         primaryFilteredProviders = primaryFilteredProviders.map(p => ({ ...p, distanceKm: undefined })).sort((a,b) => a.etaMinutes - b.etaMinutes);
       }
 
-      setProviders(filteredProviders);
+      if (primaryFilteredProviders.length > 0) {
+        setDisplayedProviders(primaryFilteredProviders);
+      } else {
+        setNoSpecificMatch(true);
+        // Fallback: show all providers, sorted by ETA if no location, or by name.
+        let fallbackProviders = MOCK_PROVIDERS.map(p => userLocation ? ({...p, distanceKm: calculateDistance(userLocation, p.currentLocation)}) : ({...p, distanceKm: undefined}));
+        if (userLocation) {
+            fallbackProviders.sort((a,b) => (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity));
+        } else {
+            fallbackProviders.sort((a,b) => a.etaMinutes - b.etaMinutes);
+        }
+        setDisplayedProviders(fallbackProviders);
+      }
       setIsLoading(false);
     }, 1500); 
   }, [userLocation, issueType]);
@@ -137,24 +163,31 @@ const ProviderList: FC<ProviderListProps> = ({ userLocation, issueType, onSelect
             <ListFilter className="mr-2 h-6 w-6 text-primary"/>
             Available Auto Xpress Garages
         </CardTitle>
-        <p className="text-muted-foreground">
+        {noSpecificMatch ? (
+           <CardDescription className="text-sm">
+            No garages perfectly matched your criteria for "{issueType || 'your issue'}" {userLocation ? 'nearby' : ''}. 
+            Showing all available garages. Consider contacting them directly or checking major towns like Entebbe, Mukono, or Jinja if you are outside Kampala.
+          </CardDescription>
+        ) : (
+          <CardDescription className="text-sm">
             Showing Auto Xpress garages {issueType ? `that can handle "${issueType}"` : ''} {userLocation ? 'sorted by distance.' : 'sorted by ETA.'}
-        </p>
+          </CardDescription>
+        )}
       </CardHeader>
       <CardContent>
-        {providers.length === 0 ? (
+        {displayedProviders.length === 0 && !noSpecificMatch ? ( // Should ideally not happen if MOCK_PROVIDERS is not empty
             <Alert variant="default" className="mt-4">
               <SearchX className="h-5 w-5" />
               <AlertTitle className="font-semibold">No Auto Xpress Garages Found</AlertTitle>
               <AlertDescription>
-                Unfortunately, we couldn't find any Auto Xpress garages matching your current criteria for "{issueType || 'your issue'}" 
-                {userLocation ? ' near your location' : ''}. You might want to try adjusting the issue description or checking back later.
+                Unfortunately, we couldn't find any Auto Xpress garages at this time. 
+                Please try again later.
               </AlertDescription>
             </Alert>
         ) : (
-          <ScrollArea className="h-[calc(100vh-380px)] min-h-[300px] pr-3">
+          <ScrollArea className="h-[calc(100vh-420px)] min-h-[300px] pr-3">
             <div className="space-y-4">
-              {providers.map((provider) => (
+              {displayedProviders.map((provider) => (
                 <ProviderCard key={provider.id} provider={provider} onSelectProvider={onSelectProvider} />
               ))}
             </div>
