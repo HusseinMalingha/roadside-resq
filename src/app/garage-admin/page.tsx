@@ -27,7 +27,8 @@ import {
   saveRequestsToStorage, 
   LOCAL_STORAGE_REQUESTS_KEY, 
   getStaffMembersFromStorage,
-  getGaragesFromStorage // Import garage storage functions
+  getGaragesFromStorage, // Import garage storage functions
+  saveGaragesToStorage // To initialize if not present
 } from '@/lib/localStorageUtils';
 import AssignStaffDialog from '@/components/garage/AssignStaffDialog';
 
@@ -61,8 +62,24 @@ export default function GarageAdminPage() {
     })).sort((a, b) => b.requestTime.getTime() - a.requestTime.getTime());
     setRequests(processedRequests);
 
-    const storedGarages = getGaragesFromStorage(); // Load garages
+    let storedGarages = getGaragesFromStorage(); // Load garages
+    if (storedGarages.length === 0) { // Initialize if empty (first run scenario)
+        const initialGarages = [ // This could be moved to a constant in localStorageUtils or types
+            { 
+                id: 'ax-kampala-central', 
+                name: 'Auto Xpress - Kampala Central', 
+                phone: '(256) 772-123456', 
+                etaMinutes: 15, 
+                currentLocation: { lat: 0.3136, lng: 32.5811 }, 
+                generalLocation: "Kampala Central (City Oil Kira Rd)",
+                servicesOffered: ['Tire Services', 'Battery Replacement', 'Oil Change', 'Brake Services', 'Flat tire', 'Dead battery', 'Vehicle Diagnostics'] 
+            },
+        ];
+        saveGaragesToStorage(initialGarages);
+        storedGarages = initialGarages;
+    }
     setGarageProviders(storedGarages);
+
 
     if (role === 'admin' || role === 'mechanic' || role === 'customer_relations') { 
       const storedStaff = getStaffMembersFromStorage();
@@ -255,7 +272,6 @@ export default function GarageAdminPage() {
   if (role === 'admin') {
     tabsForRole.push('staff', 'garages');
   }
-  const gridColsClass = `grid-cols-${tabsForRole.length}`;
 
 
   return (
@@ -284,10 +300,10 @@ export default function GarageAdminPage() {
       </Card>
 
       <Tabs defaultValue="requests" className="w-full">
-        <TabsList className={`grid w-full max-w-lg ${gridColsClass} sm:${gridColsClass}`}>
-          <TabsTrigger value="requests">Service Requests</TabsTrigger>
-          {role === 'admin' && <TabsTrigger value="staff">Staff Management</TabsTrigger>}
-          {role === 'admin' && <TabsTrigger value="garages">Garage Management</TabsTrigger>}
+        <TabsList className="max-w-lg mx-auto w-full">
+          <TabsTrigger value="requests" className="flex-1">Service Requests</TabsTrigger>
+          {role === 'admin' && <TabsTrigger value="staff" className="flex-1">Staff Management</TabsTrigger>}
+          {role === 'admin' && <TabsTrigger value="garages" className="flex-1">Garage Management</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="requests" className="mt-6">
@@ -370,7 +386,7 @@ export default function GarageAdminPage() {
           onClose={() => setRequestToAssign(null)}
           requestId={requestToAssign.id}
           currentAssignedStaffId={requestToAssign.assignedStaffId}
-          staffList={assignableMechanics}
+          staffList={assignableMechanics} // Pass only assignable mechanics
           onAssignStaff={handleAssignStaff}
         />
       )}
