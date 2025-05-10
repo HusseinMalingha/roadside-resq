@@ -1,8 +1,32 @@
+
+"use client";
+
 import Link from 'next/link';
-import { LifeBuoy, Wrench } from 'lucide-react';
+import { LifeBuoy, Wrench, LogIn, LogOut, UserCircle, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useAuth } from '@/contexts/AuthContext';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 const Header = () => {
+  const { user, loading, signOut } = useAuth();
+
+  const getInitials = (name?: string | null) => {
+    if (!name) return 'RR';
+    const names = name.split(' ');
+    if (names.length > 1) {
+      return `${names[0][0]}${names[names.length - 1][0]}`.toUpperCase();
+    }
+    return name.substring(0, 2).toUpperCase();
+  };
+
   return (
     <header className="bg-primary text-primary-foreground shadow-lg sticky top-0 z-50">
       <div className="container mx-auto flex items-center justify-between h-16 px-4 md:px-6">
@@ -10,13 +34,53 @@ const Header = () => {
           <LifeBuoy className="h-8 w-8" />
           <span>Roadside Rescue</span>
         </Link>
-        <nav>
+        <nav className="flex items-center gap-3">
           <Link href="/garage-admin" legacyBehavior passHref>
             <Button variant="ghost" className="text-primary-foreground hover:bg-primary/80">
               <Wrench className="mr-2 h-5 w-5" />
               Garage Admin
             </Button>
           </Link>
+
+          {loading ? (
+             <Loader2 className="h-6 w-6 animate-spin text-primary-foreground" />
+          ) : user ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" className="relative h-10 w-10 rounded-full p-0 hover:bg-primary/80">
+                  <Avatar className="h-9 w-9">
+                    <AvatarImage src={user.photoURL || undefined} alt={user.displayName || user.email || 'User'} />
+                    <AvatarFallback>{getInitials(user.displayName || user.email)}</AvatarFallback>
+                  </Avatar>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="w-56" align="end" forceMount>
+                <DropdownMenuLabel className="font-normal">
+                  <div className="flex flex-col space-y-1">
+                    <p className="text-sm font-medium leading-none">
+                      {user.displayName || "User"}
+                    </p>
+                    <p className="text-xs leading-none text-muted-foreground">
+                      {user.email || user.phoneNumber}
+                    </p>
+                  </div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {/* Add more items here e.g. Profile, Settings */}
+                <DropdownMenuItem onClick={signOut} className="cursor-pointer">
+                  <LogOut className="mr-2 h-4 w-4" />
+                  <span>Log out</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <Link href="/login" legacyBehavior passHref>
+              <Button variant="outline" className="text-primary-foreground border-primary-foreground/50 hover:bg-primary/80 hover:text-primary-foreground">
+                <LogIn className="mr-2 h-5 w-5" />
+                Login
+              </Button>
+            </Link>
+          )}
         </nav>
       </div>
     </header>
