@@ -96,6 +96,7 @@ export default function RoadsideRescuePage() {
       const newRequest: ServiceRequestType = {
         id: `req-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`, // More unique ID
         requestId: `RR-${Math.random().toString(36).substring(2, 7).toUpperCase()}`,
+        userId: user.uid, // Store the user's Firebase UID
         userLocation: userLocation,
         issueDescription: issueDescription,
         issueSummary: confirmedIssueSummary,
@@ -242,9 +243,9 @@ export default function RoadsideRescuePage() {
               <div className="mx-auto bg-primary text-primary-foreground rounded-full p-4 w-fit mb-4">
                 <Car className="h-12 w-12" />
               </div>
-              <CardTitle className="text-3xl font-bold">Roadside Emergency?</CardTitle>
+              <CardTitle className="text-3xl font-bold">Emergency?</CardTitle>
               <CardDescription className="text-lg text-muted-foreground">
-                Don't worry, help is just a few taps away. Let's get you back on the road.
+                Don't worry, help is just a few taps away. Let's get you back on the road with ResQ.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -472,4 +473,3 @@ export default function RoadsideRescuePage() {
     </div>
   );
 }
-

@@ -25,6 +25,7 @@ export interface VehicleInfo {
 export interface ServiceRequest {
   id: string;
   requestId: string; // A more user-friendly request ID
+  userId: string; // Firebase UID of the user who made the request
   userLocation: Location;
   issueDescription: string;
   issueSummary: string;
@@ -45,4 +46,3 @@ export interface UserProfile {
   phoneNumber?: string | null;
   // Add any other custom fields you might store
 }
-

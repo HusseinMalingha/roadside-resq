@@ -2,7 +2,7 @@
 "use client";
 
 import Link from 'next/link';
-import { LifeBuoy, Wrench, LogIn, LogOut, UserCircle, Loader2, AlertCircle } from 'lucide-react'; // Added AlertCircle
+import { LifeBuoy, Wrench, LogOut, UserCircle, Loader2, AlertCircle, History } from 'lucide-react'; // Added AlertCircle, History, Removed LogIn
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -22,10 +22,10 @@ import {
 } from "@/components/ui/tooltip"
 
 const Header = () => {
-  const { user, loading, signOut, isFirebaseReady } = useAuth(); // Added isFirebaseReady
+  const { user, loading, signOut, isFirebaseReady } = useAuth(); 
 
   const getInitials = (name?: string | null) => {
-    if (!name) return 'RR';
+    if (!name) return 'RQ'; // Updated for ResQ
     const names = name.split(' ');
     if (names.length > 1) {
       return `${names[0][0]}${names[names.length - 1][0]}`.toUpperCase();
@@ -38,7 +38,7 @@ const Header = () => {
       <div className="container mx-auto flex items-center justify-between h-16 px-4 md:px-6">
         <Link href="/" className="flex items-center gap-3 text-2xl font-bold tracking-tight hover:opacity-90 transition-opacity">
           <LifeBuoy className="h-8 w-8" />
-          <span>Roadside Rescue</span>
+          <span>ResQ</span>
         </Link>
         <nav className="flex items-center gap-3">
           <Button asChild variant="ghost" className="text-primary-foreground hover:bg-primary/80 hover:text-primary-foreground">
@@ -72,35 +72,39 @@ const Header = () => {
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
+                <DropdownMenuItem asChild className="cursor-pointer">
+                  <Link href="/my-requests">
+                    <History className="mr-2 h-4 w-4" />
+                    My Requests
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={signOut} className="cursor-pointer" disabled={!isFirebaseReady}>
                   <LogOut className="mr-2 h-4 w-4" />
                   <span>Log out</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-          ) : !isFirebaseReady ? (
+          ) : !isFirebaseReady ? ( // If Firebase is not ready, show auth is offline
              <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <span className="relative flex items-center">
+                     {/* This button indicates service unavailability, not an active login prompt */}
                     <Button className="bg-destructive text-destructive-foreground hover:bg-destructive/90 cursor-not-allowed" disabled>
                       <AlertCircle className="mr-2 h-5 w-5" />
-                      Login Unavailable
+                      Auth Offline
                     </Button>
                   </span>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Firebase not configured. Auth is offline.</p>
+                  <p>Firebase not configured. Auth services are offline.</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
           ) : (
-            <Button asChild className="bg-accent text-accent-foreground hover:bg-accent/90">
-              <Link href="/login">
-                <LogIn className="mr-2 h-5 w-5" />
-                Login
-              </Link>
-            </Button>
+            // No explicit login button here anymore. Users are redirected to login when trying to access protected features.
+            null 
           )}
         </nav>
       </div>

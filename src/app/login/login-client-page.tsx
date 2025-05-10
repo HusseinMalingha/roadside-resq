@@ -182,7 +182,7 @@ const LoginClientPage: FC = () => {
       <Card className="w-full max-w-md shadow-xl">
         <CardHeader className="text-center">
           <LogIn className="mx-auto h-10 w-10 md:h-12 md:w-12 text-primary mb-2 md:mb-3" />
-          <CardTitle className="text-xl md:text-3xl">Login to Roadside Rescue</CardTitle>
+          <CardTitle className="text-xl md:text-3xl">Login to ResQ</CardTitle>
           <CardDescription className="text-sm md:text-base">Sign in to access services and manage your requests.</CardDescription>
         </CardHeader>
         <CardContent>

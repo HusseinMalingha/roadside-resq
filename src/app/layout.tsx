@@ -9,7 +9,7 @@ import { AuthProvider } from '@/contexts/AuthContext';
 const inter = Inter({ subsets: ['latin'], variable: '--font-sans' });
 
 export const metadata: Metadata = {
-  title: 'Roadside Rescue',
+  title: 'ResQ',
   description: 'Get help fast when you need it most.',
 };
 
@@ -28,7 +28,7 @@ export default function RootLayout({
           </main>
           <Toaster />
           <footer className="py-6 text-center text-sm text-muted-foreground border-t">
-            © {new Date().getFullYear()} Roadside Rescue. All rights reserved.
+            © {new Date().getFullYear()} ResQ. All rights reserved.
           </footer>
         </AuthProvider>
       </body>
