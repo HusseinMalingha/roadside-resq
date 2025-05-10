@@ -1,3 +1,4 @@
+
 // src/components/garage/RequestList.tsx
 "use client";
 
@@ -27,7 +28,7 @@ const RequestList: FC<RequestListProps> = ({ requests, onStatusChange }) => {
   }
 
   return (
-    <ScrollArea className="h-[calc(100vh-220px)] w-full pr-3">
+    <ScrollArea className="h-full w-full pr-3"> {/* Changed height to h-full */}
       <div className="space-y-4">
         {requests.map((request) => (
           <RequestCard key={request.id} request={request} onStatusChange={onStatusChange} />
@@ -38,3 +39,5 @@ const RequestList: FC<RequestListProps> = ({ requests, onStatusChange }) => {
 };
 
 export default RequestList;
+
+    

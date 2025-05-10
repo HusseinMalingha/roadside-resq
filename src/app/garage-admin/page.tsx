@@ -21,9 +21,12 @@ import Link from 'next/link';
 
 // Mock Data - In a real app, this would come from a backend
 const MOCK_GARAGES: ServiceProvider[] = [
-  { id: 'ax1', name: 'Auto Xpress - Kampala Central', phone: '...', etaMinutes: 0, currentLocation: {lat:0, lng:0}, generalLocation: "Kampala Central", servicesOffered: [] },
-  { id: 'ax2', name: 'Auto Xpress - Lugogo', phone: '...', etaMinutes: 0, currentLocation: {lat:0, lng:0}, generalLocation: "Lugogo", servicesOffered: [] },
-  { id: 'ax3', name: 'Auto Xpress - Ntinda', phone: '...', etaMinutes: 0, currentLocation: {lat:0, lng:0}, generalLocation: "Ntinda", servicesOffered: [] },
+  { id: 'ax-kampala-central', name: 'Auto Xpress - Kampala Central', phone: '...', etaMinutes: 0, currentLocation: {lat:0.3136, lng:32.5811}, generalLocation: "Kampala Central", servicesOffered: [] },
+  { id: 'ax-lugogo', name: 'Auto Xpress - Lugogo', phone: '...', etaMinutes: 0, currentLocation: {lat:0.3270, lng:32.5990}, generalLocation: "Lugogo", servicesOffered: [] },
+  { id: 'ax-ntinda', name: 'Auto Xpress - Ntinda', phone: '...', etaMinutes: 0, currentLocation: {lat:0.3450, lng:32.6120}, generalLocation: "Ntinda", servicesOffered: [] },
+  { id: 'ax-acacia', name: 'Auto Xpress - Acacia Mall', phone: '...', etaMinutes: 0, currentLocation: {lat:0.3312, lng:32.5900}, generalLocation: "Kololo", servicesOffered: [] },
+  { id: 'ax-nakawa', name: 'Auto Xpress - Nakawa', phone: '...', etaMinutes: 0, currentLocation: {lat:0.3300, lng:32.6150}, generalLocation: "Nakawa", servicesOffered: [] },
+  { id: 'ax-entebbe-victoria-mall', name: 'Auto Xpress - Victoria Mall Entebbe', phone: '...', etaMinutes: 0, currentLocation: {lat:0.0530, lng:32.4640}, generalLocation: "Entebbe", servicesOffered: [] },
 ];
 
 const INITIAL_MOCK_REQUESTS: ServiceRequest[] = [
@@ -106,10 +109,18 @@ export default function GarageAdminPage() {
   });
   
   const refreshData = () => {
-    setRequests([...INITIAL_MOCK_REQUESTS.map(r => ({...r, requestTime: new Date(r.requestTime.getTime() + 1000)}))]); 
+    // Simulate fetching new data, including some randomness or new timestamps
+    const now = Date.now();
+    setRequests(INITIAL_MOCK_REQUESTS.map((r, index) => ({
+      ...r, 
+      id: `req${index + 1}-${now}`, // Ensure unique IDs if list can change
+      requestTime: new Date(now - 1000 * 60 * (Math.random() * 120)), // Randomize request times
+      status: ['Pending', 'Accepted', 'In Progress'][Math.floor(Math.random() * 3)] as ServiceRequest['status'] // Randomize status for demo
+    })));
     setSelectedGarage('all');
     setSelectedStatus('all');
   }
+
 
   if (authLoading) {
     return (
@@ -132,7 +143,7 @@ export default function GarageAdminPage() {
   if (role !== 'admin' && role !== 'mechanic') {
     return (
       <div className="flex-grow flex flex-col items-center justify-center text-center p-6">
-        <Card className="max-w-md shadow-xl">
+        <Card className="w-full max-w-md shadow-xl">
           <CardHeader>
             <ShieldAlert className="h-16 w-16 text-destructive mx-auto mb-4" />
             <CardTitle className="text-2xl">Access Denied</CardTitle>
@@ -155,7 +166,7 @@ export default function GarageAdminPage() {
 
   return (
     <div className="flex-grow flex flex-col p-4 md:p-6 space-y-6">
-      <Card className="shadow-md">
+      <Card className="shadow-md flex-shrink-0"> {/* Added flex-shrink-0 */}
         <CardHeader>
           <CardTitle className="text-2xl md:text-3xl">Garage Service Requests</CardTitle>
           <CardDescription>View and manage incoming roadside assistance requests. Logged in as: <span className="font-semibold capitalize">{role}</span></CardDescription>
@@ -185,7 +196,7 @@ export default function GarageAdminPage() {
                 ))}
               </SelectContent>
             </Select>
-            <Button onClick={refreshData} variant="outline" className="w-full sm:w-auto ml-auto">
+            <Button onClick={refreshData} variant="outline" className="w-full sm:w-auto sm:ml-auto">
               <RefreshCw className="mr-2 h-4 w-4" />
               Refresh
             </Button>
@@ -196,8 +207,12 @@ export default function GarageAdminPage() {
         </CardContent>
       </Card>
       
-      <RequestList requests={filteredRequests} onStatusChange={handleStatusChange} />
+      <div className="flex-grow flex flex-col min-h-0"> {/* Wrapper for RequestList to control height */}
+        <RequestList requests={filteredRequests} onStatusChange={handleStatusChange} />
+      </div>
       
     </div>
   );
 }
+
+    

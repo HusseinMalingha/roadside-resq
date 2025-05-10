@@ -10,7 +10,7 @@ import MapDisplay from '@/components/MapDisplay';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { CheckCircle, MessageSquareHeart, Car, Clock, Loader2, ArrowLeft, Home, RefreshCw, LogIn } from 'lucide-react';
+import { CheckCircle, MessageSquareHeart, Car, Clock, Loader2, ArrowLeft, Home, RefreshCw, LogIn, AlertCircle as AlertCircleIcon } from 'lucide-react'; // Renamed AlertCircle to AlertCircleIcon
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
@@ -18,7 +18,7 @@ import { useRouter } from 'next/navigation';
 type AppStep = 'initial' | 'details' | 'providers' | 'tracking' | 'completed';
 
 export default function RoadsideRescuePage() {
-  const { user, loading: authLoading, isFirebaseReady } = useAuth(); // Added isFirebaseReady
+  const { user, loading: authLoading, isFirebaseReady } = useAuth();
   const router = useRouter();
 
   const [currentStep, setCurrentStep] = useState<AppStep>('initial');
@@ -130,15 +130,19 @@ export default function RoadsideRescuePage() {
           return;
         }
 
-        const latDiff = userLocation.lat - currentProviderLoc.lat;
-        const lngDiff = userLocation.lng - currentProviderLoc.lng;
-        const stepsRemaining = currentEta > 0 ? currentEta : 1; 
-        
-        currentProviderLoc = {
-          lat: currentProviderLoc.lat + latDiff / stepsRemaining,
-          lng: currentProviderLoc.lng + lngDiff / stepsRemaining,
-        };
-        setProviderCurrentLocation(currentProviderLoc);
+        // Basic location update simulation
+        if (userLocation && currentProviderLoc) {
+            const latDiff = userLocation.lat - currentProviderLoc.lat;
+            const lngDiff = userLocation.lng - currentProviderLoc.lng;
+            const stepsRemaining = currentEta > 0 ? currentEta : 1; 
+            
+            currentProviderLoc = {
+            lat: currentProviderLoc.lat + latDiff / stepsRemaining,
+            lng: currentProviderLoc.lng + lngDiff / stepsRemaining,
+            };
+            setProviderCurrentLocation(currentProviderLoc);
+        }
+
 
       }, 2000); 
     }
@@ -173,7 +177,7 @@ export default function RoadsideRescuePage() {
               <p className="mb-6">We'll quickly find nearby assistance for your issue.</p>
                {!isFirebaseReady && !authLoading && (
                 <Alert variant="destructive" className="mb-4">
-                  <AlertCircle className="h-4 w-4" />
+                  <AlertCircleIcon className="h-4 w-4" />
                   <AlertTitle>Authentication Service Unavailable</AlertTitle>
                   <AlertDescription>
                     Cannot proceed with request. Please try again later.
@@ -203,7 +207,7 @@ export default function RoadsideRescuePage() {
         if (!isFirebaseReady) {
              return (
                 <Alert variant="destructive">
-                    <AlertCircle className="h-4 w-4" />
+                    <AlertCircleIcon className="h-4 w-4" />
                     <AlertTitle>Service Unavailable</AlertTitle>
                     <AlertDescription>Cannot load details form as authentication service is not ready.</AlertDescription>
                      <Button onClick={resetApp} className="mt-4">Go Back</Button>
@@ -246,8 +250,8 @@ export default function RoadsideRescuePage() {
         );
       case 'providers':
         return (
-          <div className="w-full animate-slideUp">
-             <Button variant="outline" onClick={() => setCurrentStep('details')} className="mb-6">
+          <div className="w-full animate-slideUp flex flex-col flex-grow">
+             <Button variant="outline" onClick={() => setCurrentStep('details')} className="mb-6 flex-shrink-0">
               <ArrowLeft className="mr-2 h-4 w-4" /> Back to Details
             </Button>
             <ProviderList
@@ -341,3 +345,5 @@ export default function RoadsideRescuePage() {
     </div>
   );
 }
+
+    
