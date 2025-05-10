@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect } from 'react';
@@ -22,12 +21,14 @@ const LoginPage: FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false); // General submission loader
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const verifier = setupRecaptcha('recaptcha-container-invisible'); // For invisible reCAPTCHA
-      setAppVerifier(verifier);
+    if (typeof window !== 'undefined' && !appVerifier) { // Only setup if not already initialized
+      const verifier = setupRecaptcha('recaptcha-container-invisible');
+      if (verifier) {
+        setAppVerifier(verifier);
+      }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [setupRecaptcha]); // Re-run if setupRecaptcha changes, though it shouldn't often
+  }, [setupRecaptcha, appVerifier]); // Re-run if setupRecaptcha changes or if appVerifier state changes (e.g. becomes null)
 
 
   const handleGoogleSignIn = async () => {
@@ -40,6 +41,17 @@ const LoginPage: FC = () => {
     e.preventDefault();
     if (!phoneNumber || !appVerifier) {
       // Potentially show a toast error for missing appVerifier if it's consistently null
+      if(!appVerifier) {
+        // Attempt to re-initialize if null, this might happen if tab was hidden initially
+         const verifier = setupRecaptcha('recaptcha-container-invisible');
+         if (verifier) {
+           setAppVerifier(verifier);
+           // Consider re-calling handleSendOtp or informing user to try again
+         } else {
+            // toast({title: "ReCAPTCHA Error", description: "Please wait for ReCAPTCHA to load or refresh page.", variant:"destructive"})
+            return;
+         }
+      }
       return;
     }
     setIsSubmitting(true);
@@ -47,6 +59,15 @@ const LoginPage: FC = () => {
     if (result) {
       setConfirmationResult(result);
       setOtpSent(true);
+    } else {
+      // OTP sending failed, appVerifier might have been reset or needs reset
+      // if (appVerifier && typeof (appVerifier as any).render === 'function' && (window as any).grecaptcha) {
+      //   (appVerifier as any).render().then((widgetId: any) => {
+      //        if (typeof window !== 'undefined' && (window as any).grecaptcha && widgetId !== undefined) {
+      //           (window as any).grecaptcha.reset(widgetId);
+      //        }
+      //   }).catch((renderError: any) => console.error("Error rendering or resetting reCAPTCHA: ", renderError));
+      // }
     }
     setIsSubmitting(false);
   };
@@ -58,6 +79,9 @@ const LoginPage: FC = () => {
     await signInWithPhoneNumberStep2(confirmationResult, otp);
     // No need to setIsSubmitting(false) here as successful login navigates away.
     // If it fails, the loading state in useAuth will handle it.
+    // If OTP verification fails, reCAPTCHA might need to be resolved again.
+    // The existing error handling in signInWithPhoneNumberStep1 for failed OTP send attempts
+    // includes a grecaptcha.reset() if an appVerifier was used.
   };
 
   if (loading && !user) { // Show page loader only if initial auth check is happening

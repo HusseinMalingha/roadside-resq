@@ -1,9 +1,8 @@
-
 "use client";
 
 import type { ReactNode, FC } from 'react';
-import { createContext, useContext, useEffect, useState } from 'react';
-import { auth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut as firebaseSignOut, type User, RecaptchaVerifier, signInWithPhoneNumber, type ConfirmationResult } from '@/lib/firebase';
+import { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import { auth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut as firebaseSignOut, type User, RecaptchaVerifier, signInWithPhoneNumber, type ConfirmationResult, type Auth } from '@/lib/firebase';
 import { useRouter } from 'next/navigation';
 import { useToast } from "@/hooks/use-toast";
 
@@ -48,22 +47,38 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
     }
   };
   
-  const setupRecaptcha = (elementId: string): RecaptchaVerifier | null => {
+  const setupRecaptcha = useCallback((elementId: string): RecaptchaVerifier | null => {
     if (typeof window !== 'undefined') {
-      const recaptchaVerifier = new RecaptchaVerifier(auth, elementId, {
-        'size': 'invisible', // Can be 'normal' or 'compact' or 'invisible'
-        'callback': (response: any) => {
-          // reCAPTCHA solved, allow signInWithPhoneNumber.
-        },
-        'expired-callback': () => {
-          // Response expired. Ask user to solve reCAPTCHA again.
-           toast({ title: "ReCAPTCHA Expired", description: "Please try verifying again.", variant: "destructive" });
+      const recaptchaContainer = document.getElementById(elementId);
+      if (recaptchaContainer) {
+        try {
+          const verifier = new RecaptchaVerifier(
+            auth as Auth, // Cast to Auth type if necessary, or ensure auth is correctly typed
+            recaptchaContainer, // Pass the HTMLElement
+            {
+              'size': 'invisible',
+              'callback': (response: any) => {
+                // reCAPTCHA solved, allow signInWithPhoneNumber.
+              },
+              'expired-callback': () => {
+                toast({ title: "ReCAPTCHA Expired", description: "Please try verifying again.", variant: "destructive" });
+              }
+            }
+          );
+          return verifier;
+        } catch (e: any) {
+          console.error("Error initializing RecaptchaVerifier:", e);
+          toast({ title: "ReCAPTCHA Setup Failed", description: `Could not initialize reCAPTCHA: ${e.message || 'Unknown error'}. Try refreshing.`, variant: "destructive" });
+          return null;
         }
-      });
-      return recaptchaVerifier;
+      } else {
+        console.warn(`Recaptcha container with id '${elementId}' not found in the DOM.`);
+        return null;
+      }
     }
     return null;
-  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auth, toast]); // auth and toast are dependencies
 
   const signInWithPhoneNumberStep1 = async (phoneNumber: string, appVerifier: RecaptchaVerifier): Promise<ConfirmationResult | null> => {
     setLoading(true);
@@ -76,13 +91,12 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
       console.error("Error sending OTP:", error);
       toast({ title: "Error Sending OTP", description: error.message || "Failed to send OTP. Check the phone number and try again.", variant: "destructive" });
       setLoading(false);
-      // Reset reCAPTCHA if it exists and is of type RecaptchaVerifier
-      if (appVerifier && typeof (appVerifier as any).render === 'function') {
+      if (appVerifier && typeof (appVerifier as any).render === 'function' && (window as any).grecaptcha) {
         (appVerifier as any).render().then((widgetId: any) => {
-             if (typeof window !== 'undefined' && (window as any).grecaptcha) {
+             if (typeof window !== 'undefined' && (window as any).grecaptcha && widgetId !== undefined) {
                 (window as any).grecaptcha.reset(widgetId);
              }
-        });
+        }).catch((renderError: any) => console.error("Error rendering or resetting reCAPTCHA: ", renderError));
       }
       return null;
     }
