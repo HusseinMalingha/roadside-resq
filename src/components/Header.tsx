@@ -74,7 +74,7 @@ const Header = () => {
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            <Button asChild variant="outline" className="text-primary-foreground border-primary-foreground/50 hover:bg-primary/80 hover:text-primary-foreground">
+            <Button asChild className="bg-accent text-accent-foreground hover:bg-accent/90">
               <Link href="/login">
                 <LogIn className="mr-2 h-5 w-5" />
                 Login
