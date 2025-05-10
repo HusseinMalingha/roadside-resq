@@ -22,13 +22,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from '@/components/ui/label';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Users } from 'lucide-react';
 
 interface AssignStaffDialogProps {
   isOpen: boolean;
   onClose: () => void;
   requestId: string;
   currentAssignedStaffId?: string | null;
-  staffList: StaffMember[]; // Should be pre-filtered to mechanics
+  staffList: StaffMember[]; // This list should be pre-filtered to *assignable* mechanics by the parent
   onAssignStaff: (requestId: string, staffId: string | null) => void;
 }
 
@@ -37,7 +39,7 @@ const AssignStaffDialog: React.FC<AssignStaffDialogProps> = ({
   onClose,
   requestId,
   currentAssignedStaffId,
-  staffList,
+  staffList, // Expects pre-filtered list of *available* mechanics
   onAssignStaff,
 }) => {
   const [selectedStaffId, setSelectedStaffId] = useState<string | null>(currentAssignedStaffId || null);
@@ -58,9 +60,19 @@ const AssignStaffDialog: React.FC<AssignStaffDialogProps> = ({
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle>Assign Mechanic</DialogTitle>
-          <DialogDescription>Select a mechanic to assign to this service request.</DialogDescription>
+          <DialogDescription>Select an available mechanic to assign to this service request.</DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
+          {staffList.length === 0 && !currentAssignedStaffId && (
+            <Alert variant="default">
+              <Users className="h-4 w-4" />
+              <AlertTitle>No Mechanics Available</AlertTitle>
+              <AlertDescription>
+                There are currently no mechanics available for assignment (they might all be occupied). 
+                You can still unassign if needed.
+              </AlertDescription>
+            </Alert>
+          )}
           <div className="grid grid-cols-4 items-center gap-4">
             <Label htmlFor="mechanic" className="text-right">
               Mechanic
@@ -80,6 +92,17 @@ const AssignStaffDialog: React.FC<AssignStaffDialogProps> = ({
                       {staff.name} ({staff.email})
                     </SelectItem>
                   ))}
+                  {/* If current assigned mechanic is not in the filtered available list, show them as an option too for context */}
+                  {currentAssignedStaffId && !staffList.find(s => s.id === currentAssignedStaffId) && 
+                    (() => {
+                        const currentMechanic = getStaffMembersFromStorage().find(s => s.id === currentAssignedStaffId);
+                        return currentMechanic ? (
+                            <SelectItem key={currentMechanic.id} value={currentMechanic.id} disabled>
+                                {currentMechanic.name} (Currently Assigned, Occupied)
+                            </SelectItem>
+                        ) : null;
+                    })()
+                  }
                 </SelectContent>
               </Select>
             </div>
@@ -89,7 +112,9 @@ const AssignStaffDialog: React.FC<AssignStaffDialogProps> = ({
           <DialogClose asChild>
             <Button type="button" variant="outline">Cancel</Button>
           </DialogClose>
-          <Button type="button" onClick={handleSave}>Confirm Assignment</Button>
+          <Button type="button" onClick={handleSave} disabled={staffList.length === 0 && !selectedStaffId && !currentAssignedStaffId}>
+            Confirm Assignment
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

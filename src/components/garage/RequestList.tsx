@@ -12,18 +12,20 @@ import { Inbox } from 'lucide-react';
 interface RequestListProps {
   requests: ServiceRequest[];
   onStatusChange: (requestId: string, newStatus: ServiceRequest['status'], mechanicNotes?: string, resourcesUsed?: string) => void;
-  onAssignStaff?: (requestId: string, staffId: string | null) => void; // For admin
-  staffList: StaffMember[]; // Full staff list, RequestCard will filter if needed
+  onAssignStaff?: (requestId: string, staffId: string | null) => void; 
+  staffList: StaffMember[]; // Full list of mechanics for display
+  assignableStaffList: StaffMember[]; // Filtered list of available mechanics for assignment dialog
   currentUserRole: UserRole;
-  currentUserId?: string; // Firebase UID of logged in user
-  currentUserEmail?: string; // Firebase Email of logged in user
+  currentUserId?: string; 
+  currentUserEmail?: string; 
 }
 
 const RequestList: FC<RequestListProps> = ({ 
     requests, 
     onStatusChange, 
     onAssignStaff, 
-    staffList, 
+    staffList,
+    assignableStaffList, 
     currentUserRole, 
     currentUserId,
     currentUserEmail
@@ -41,7 +43,7 @@ const RequestList: FC<RequestListProps> = ({
   }
 
   return (
-    <ScrollArea className="h-full w-full pr-3"> {/* Changed height to h-full */}
+    <ScrollArea className="h-full w-full pr-3"> 
       <div className="space-y-4">
         {requests.map((request) => (
           <RequestCard 
@@ -49,7 +51,8 @@ const RequestList: FC<RequestListProps> = ({
             request={request} 
             onStatusChange={onStatusChange} 
             onAssignStaff={onAssignStaff}
-            staffList={staffList}
+            staffList={staffList} // Pass full list for display
+            assignableStaffList={assignableStaffList} // Pass available for assignment
             currentUserRole={currentUserRole}
             currentUserId={currentUserId}
             currentUserEmail={currentUserEmail}

@@ -22,6 +22,8 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
 import { getRequestsFromStorage, saveRequestsToStorage, LOCAL_STORAGE_REQUESTS_KEY, getStaffMembersFromStorage } from '@/lib/localStorageUtils';
+import AssignStaffDialog from '@/components/garage/AssignStaffDialog';
+
 
 // Mock Data for Garages - this can remain as it's static provider info
 const MOCK_GARAGES: ServiceProvider[] = [
@@ -42,11 +44,14 @@ export default function GarageAdminPage() {
 
   const [requests, setRequests] = useState<ServiceRequest[]>([]);
   const [staffMembers, setStaffMembers] = useState<StaffMember[]>([]);
-  const [isLoadingData, setIsLoadingData] = useState(true); // Combined loading state
+  const [isLoadingData, setIsLoadingData] = useState(true); 
   const [selectedGarage, setSelectedGarage] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const prevPendingCountRef = useRef<number>(0);
   const initialLoadRef = useRef(true);
+
+  const [requestToAssign, setRequestToAssign] = useState<ServiceRequest | null>(null);
+
 
   const loadData = useCallback(() => {
     setIsLoadingData(true);
@@ -58,7 +63,7 @@ export default function GarageAdminPage() {
     })).sort((a, b) => b.requestTime.getTime() - a.requestTime.getTime());
     setRequests(processedRequests);
 
-    if (role === 'admin') {
+    if (role === 'admin' || role === 'mechanic' || role === 'customer_relations') { // Ensure staff loaded for all relevant roles
       const storedStaff = getStaffMembersFromStorage();
       setStaffMembers(storedStaff);
     }
@@ -82,7 +87,7 @@ export default function GarageAdminPage() {
   useEffect(() => {
     const handleStorageChange = (event: StorageEvent) => {
       if (event.key === LOCAL_STORAGE_REQUESTS_KEY) {
-        const newRequests = loadData(); // Reloads both requests and staff if admin
+        const newRequests = loadData(); 
         const currentPendingCount = newRequests.filter(req => req.status === 'Pending').length;
 
         if (currentPendingCount > prevPendingCountRef.current) {
@@ -95,12 +100,11 @@ export default function GarageAdminPage() {
         }
         prevPendingCountRef.current = currentPendingCount;
       }
-      // Could also listen for staff changes if needed for real-time updates from other admin tabs
     };
 
     window.addEventListener('storage', handleStorageChange);
     return () => window.removeEventListener('storage', handleStorageChange);
-  }, [loadData, toast, role]);
+  }, [loadData, toast]);
 
   useEffect(() => {
     if (initialLoadRef.current || isLoadingData) return;
@@ -126,21 +130,30 @@ export default function GarageAdminPage() {
   }, [requests, toast, isLoadingData]);
 
   const handleStatusChange = (requestId: string, newStatus: ServiceRequest['status'], notes?: string, resources?: string) => {
+    let requestNeedsAssignment = false;
     const updatedRequests = requests.map(req => {
       if (req.id === requestId) {
         const updatedReq = { ...req, status: newStatus };
         if (notes !== undefined) updatedReq.mechanicNotes = notes;
         if (resources !== undefined) updatedReq.resourcesUsed = resources;
+
+        if (role === 'admin' && newStatus === 'Accepted' && !updatedReq.assignedStaffId) {
+          requestNeedsAssignment = true;
+          setRequestToAssign(updatedReq); // Set request for assignment dialog
+        }
         return updatedReq;
       }
       return req;
     });
     setRequests(updatedRequests);
     saveRequestsToStorage(updatedRequests);
-    toast({
-      title: "Status Updated",
-      description: `Request ${requestId.slice(0,10)}... status changed to ${newStatus}.`,
-    });
+
+    if (!requestNeedsAssignment) { // Don't toast for status if assignment dialog will open
+        toast({
+          title: "Status Updated",
+          description: `Request ${requestId.slice(0,10)}... status changed to ${newStatus}.`,
+        });
+    }
   };
   
   const handleAssignStaff = (requestId: string, staffId: string | null) => {
@@ -154,25 +167,19 @@ export default function GarageAdminPage() {
       title: "Request Assignment Updated",
       description: `Request ${requestId.slice(0,10)}... assigned to ${staffName}.`,
     });
+    setRequestToAssign(null); // Close dialog
   };
 
   const getVisibleRequests = () => {
     let filtered = requests;
     if (role === 'mechanic' && user) {
-      // A mechanic sees requests assigned to their staff profile (matched by email)
       const mechanicStaffProfile = staffMembers.find(staff => staff.email.toLowerCase() === user.email?.toLowerCase() && staff.role === 'mechanic');
       if (mechanicStaffProfile) {
         filtered = filtered.filter(req => req.assignedStaffId === mechanicStaffProfile.id);
       } else {
-        filtered = []; // Not a recognized mechanic staff member or no matching email
+        filtered = []; 
       }
-    } else if (role === 'customer_relations') {
-      // Customer relations might see all active requests or based on other criteria
-      // For now, let's assume they see all non-completed/cancelled, similar to admin filter by default
-      // This can be refined further.
     }
-
-    // Apply garage and status filters
     return filtered.filter(req => {
       const garageMatch = selectedGarage === 'all' || (req.selectedProvider && req.selectedProvider.id === selectedGarage);
       const statusMatch = selectedStatus === 'all' || req.status === selectedStatus;
@@ -181,6 +188,11 @@ export default function GarageAdminPage() {
   };
   
   const visibleRequests = getVisibleRequests();
+
+  const allMechanics = staffMembers.filter(s => s.role === 'mechanic');
+  const requestsInProgress = requests.filter(req => req.status === 'In Progress');
+  const occupiedMechanicIds = new Set(requestsInProgress.map(req => req.assignedStaffId).filter(id => !!id));
+  const assignableMechanics = allMechanics.filter(mech => !occupiedMechanicIds.has(mech.id));
 
   const refreshData = () => {
     loadData();
@@ -278,7 +290,7 @@ export default function GarageAdminPage() {
             <CardContent className="space-y-4">
               <div className="flex flex-col sm:flex-row gap-3 items-center border-b pb-4">
                 <Filter className="h-5 w-5 text-muted-foreground hidden sm:block" />
-                <Select value={selectedGarage} onValueChange={setSelectedGarage}>
+                <Select value={selectedGarage} onValueChange={setSelectedGarage} disabled={role === 'mechanic'}>
                   <SelectTrigger className="w-full sm:w-[200px]">
                     <SelectValue placeholder="Filter by Garage Branch" />
                   </SelectTrigger>
@@ -289,7 +301,7 @@ export default function GarageAdminPage() {
                     ))}
                   </SelectContent>
                 </Select>
-                <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+                <Select value={selectedStatus} onValueChange={setSelectedStatus} disabled={role === 'mechanic'}>
                   <SelectTrigger className="w-full sm:w-[200px]">
                     <SelectValue placeholder="Filter by Status" />
                   </SelectTrigger>
@@ -315,14 +327,15 @@ export default function GarageAdminPage() {
                   <p className="ml-3">Refreshing requests...</p>
                 </div>
               ) : (
-                <div className="min-h-[300px]"> {/* Ensure list has some height */}
+                <div className="min-h-[300px]"> 
                  <RequestList 
                     requests={visibleRequests} 
                     onStatusChange={handleStatusChange} 
                     onAssignStaff={role === 'admin' ? handleAssignStaff : undefined}
-                    staffList={staffMembers.filter(s => s.role === 'mechanic')} // Pass only mechanics for assignment
+                    staffList={allMechanics} // Full list for display name
+                    assignableStaffList={assignableMechanics} // Filtered list for assignment dialog
                     currentUserRole={role}
-                    currentUserId={user?.uid} // Or email, depending on how you identify mechanics
+                    currentUserId={user?.uid} 
                     currentUserEmail={user?.email}
                   />
                 </div>
@@ -337,6 +350,16 @@ export default function GarageAdminPage() {
           </TabsContent>
         )}
       </Tabs>
+      {requestToAssign && role === 'admin' && (
+        <AssignStaffDialog
+          isOpen={!!requestToAssign}
+          onClose={() => setRequestToAssign(null)}
+          requestId={requestToAssign.id}
+          currentAssignedStaffId={requestToAssign.assignedStaffId}
+          staffList={assignableMechanics}
+          onAssignStaff={handleAssignStaff}
+        />
+      )}
     </div>
   );
 }

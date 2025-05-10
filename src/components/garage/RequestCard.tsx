@@ -2,11 +2,11 @@
 "use client";
 
 import type { FC } from 'react';
-import React, { useState } from 'react'; // Added useState import
+import React, { useState } from 'react';
 import type { ServiceRequest, StaffMember, UserRole } from '@/types';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { MapPin, User, Phone, Wrench, CheckCircle, Send, XCircle, Hourglass, CarIcon, UserCheck, UserPlus } from 'lucide-react';
+import { MapPin, User, Phone, Wrench, CheckCircle, Send, XCircle, Hourglass, CarIcon, UserCheck, UserPlus, Edit2 } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -21,11 +21,12 @@ import LogMechanicDetailsDialog from './LogMechanicDetailsDialog';
 interface RequestCardProps {
   request: ServiceRequest;
   onStatusChange: (requestId: string, newStatus: ServiceRequest['status'], mechanicNotes?: string, resourcesUsed?: string) => void;
-  onAssignStaff?: (requestId: string, staffId: string | null) => void; // For admin
-  staffList: StaffMember[]; // List of all staff, filtered to mechanics by parent if needed for assignment
+  onAssignStaff?: (requestId: string, staffId: string | null) => void; 
+  staffList: StaffMember[]; // Full list of mechanics for display purposes
+  assignableStaffList: StaffMember[]; // Filtered list of available mechanics for assignment
   currentUserRole: UserRole;
-  currentUserId?: string; // Firebase UID
-  currentUserEmail?: string; // Firebase Email
+  currentUserId?: string; 
+  currentUserEmail?: string; 
 }
 
 const statusColors: Record<ServiceRequest['status'], string> = {
@@ -49,62 +50,64 @@ const RequestCard: FC<RequestCardProps> = ({
     onStatusChange, 
     onAssignStaff, 
     staffList, 
+    assignableStaffList,
     currentUserRole,
-    currentUserId,
     currentUserEmail
 }) => {
   const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false);
   const [isLogDetailsDialogOpen, setIsLogDetailsDialogOpen] = useState(false);
+  // targetStatusOnSubmitForLogging will be 'Completed' if completing, or current status if just logging.
+  const [targetStatusOnSubmitForLogging, setTargetStatusOnSubmitForLogging] = useState<ServiceRequest['status']>(request.status);
+
 
   const StatusIcon = statusIcons[request.status];
-  const assignedMechanic = staffList.find(staff => staff.id === request.assignedStaffId && staff.role === 'mechanic');
+  const assignedMechanic = staffList.find(staff => staff.id === request.assignedStaffId);
 
-  // Determine if the current logged-in mechanic is assigned to this request
-  // This matching logic might need refinement if mechanic staff members don't have Firebase UIDs directly
-  // For now, using email match if staff members are identified by email.
   const currentMechanicStaffProfile = staffList.find(s => s.email.toLowerCase() === currentUserEmail?.toLowerCase() && s.role === 'mechanic');
   const isCurrentUserAssignedMechanic = !!currentMechanicStaffProfile && request.assignedStaffId === currentMechanicStaffProfile.id;
 
-
-  const canMechanicUpdateStatus = (newStatus: ServiceRequest['status']): boolean => {
-    if (currentUserRole !== 'mechanic' || !isCurrentUserAssignedMechanic) return false;
-    // Mechanics can move to In Progress, Completed, or Cancelled if it's assigned to them.
-    return ['In Progress', 'Completed', 'Cancelled'].includes(newStatus);
+  const handleLocalStatusChange = (newStatus: ServiceRequest['status']) => {
+    if (currentUserRole === 'admin') {
+      if (newStatus === 'Accepted' && !request.assignedStaffId && onAssignStaff) {
+        // Admin sets to Accepted, no mechanic yet -> trigger assignment in parent or here
+        // Parent (GarageAdminPage) handles this by setting requestToAssign
+        onStatusChange(request.id, newStatus); // Update status, parent will pop dialog
+      } else {
+        onStatusChange(request.id, newStatus);
+      }
+    } else if (currentUserRole === 'mechanic' && isCurrentUserAssignedMechanic) {
+      if (newStatus === 'Completed') {
+        setTargetStatusOnSubmitForLogging('Completed');
+        setIsLogDetailsDialogOpen(true); // Must log details to complete
+      } else if ((request.status === 'Accepted' && (newStatus === 'In Progress' || newStatus === 'Cancelled')) ||
+                 (request.status === 'In Progress' && newStatus === 'Cancelled')) {
+        onStatusChange(request.id, newStatus);
+      }
+    }
+  };
+  
+  const handleLogSubmit = (notes: string, resources: string, statusToSet: ServiceRequest['status']) => {
+    onStatusChange(request.id, statusToSet, notes, resources);
+    setIsLogDetailsDialogOpen(false);
   };
 
-  const canAdminUpdateStatus = (newStatus: ServiceRequest['status']): boolean => {
-    return currentUserRole === 'admin';
-  }
+  const handleOpenLogDetailsDialog = () => {
+    setTargetStatusOnSubmitForLogging(request.status); // Logging for current status
+    setIsLogDetailsDialogOpen(true);
+  };
+
+  const canAdminAssign = currentUserRole === 'admin' && onAssignStaff && request.status !== 'Completed' && request.status !== 'Cancelled';
   
   const availableStatusesForSelect: ServiceRequest['status'][] = 
     currentUserRole === 'admin' 
     ? ['Pending', 'Accepted', 'In Progress', 'Completed', 'Cancelled']
     : currentUserRole === 'mechanic' && isCurrentUserAssignedMechanic
-    ? ['Pending', 'Accepted', 'In Progress', 'Completed', 'Cancelled'].filter(s => 
-        s === request.status || // current status
-        (request.status === 'Accepted' && (s === 'In Progress' || s === 'Cancelled')) ||
-        (request.status === 'In Progress' && (s === 'Completed' || s === 'Cancelled'))
+    ? (
+        request.status === 'Accepted' ? ['Accepted', 'In Progress', 'Cancelled'] :
+        request.status === 'In Progress' ? ['In Progress', 'Completed', 'Cancelled'] :
+        [request.status]
       ) as ServiceRequest['status'][]
-    : [request.status]; // CR or unassigned mechanic sees only current status
-
-  const handleLocalStatusChange = (newStatus: ServiceRequest['status']) => {
-    if (currentUserRole === 'admin' && canAdminUpdateStatus(newStatus)) {
-      onStatusChange(request.id, newStatus);
-    } else if (currentUserRole === 'mechanic' && canMechanicUpdateStatus(newStatus)) {
-      // If mechanic is changing to Completed, prompt for notes (optional)
-      if (newStatus === 'Completed' || newStatus === 'In Progress') {
-        setIsLogDetailsDialogOpen(true); // Trigger dialog to log notes before confirming status
-      } else {
-        onStatusChange(request.id, newStatus);
-      }
-    }
-    // CR cannot change status via this select
-  };
-  
-  const handleMechanicLogSubmit = (notes: string, resources: string, newStatus?: ServiceRequest['status']) => {
-    onStatusChange(request.id, newStatus || request.status, notes, resources);
-    setIsLogDetailsDialogOpen(false);
-  };
+    : [request.status];
 
 
   return (
@@ -183,7 +186,7 @@ const RequestCard: FC<RequestCardProps> = ({
               <Select 
                 value={request.status}
                 onValueChange={(newStatus: ServiceRequest['status']) => handleLocalStatusChange(newStatus)}
-                disabled={availableStatusesForSelect.length <= 1 && availableStatusesForSelect[0] === request.status}
+                disabled={availableStatusesForSelect.length <= 1 && availableStatusesForSelect[0] === request.status || request.status === 'Completed' || request.status === 'Cancelled'}
               >
                 <SelectTrigger className="w-full sm:w-[180px] text-xs py-1 h-9">
                   <SelectValue placeholder="Update status" />
@@ -202,36 +205,42 @@ const RequestCard: FC<RequestCardProps> = ({
             )}
           </div>
           <div className="flex gap-2 w-full sm:w-auto">
-            {currentUserRole === 'admin' && onAssignStaff && (
+            {canAdminAssign && (
               <Button size="sm" variant="outline" onClick={() => setIsAssignDialogOpen(true)} className="text-xs flex-1 sm:flex-initial">
-                <UserPlus className="mr-1.5 h-3.5 w-3.5"/> Assign
+                <UserPlus className="mr-1.5 h-3.5 w-3.5"/> {request.assignedStaffId ? 'Re-assign' : 'Assign'}
               </Button>
             )}
             {currentUserRole === 'mechanic' && isCurrentUserAssignedMechanic && (request.status === 'Accepted' || request.status === 'In Progress') && (
-              <Button size="sm" variant="outline" onClick={() => setIsLogDetailsDialogOpen(true)} className="text-xs flex-1 sm:flex-initial">
-                <Wrench className="mr-1.5 h-3.5 w-3.5"/> Log Details
+              <Button size="sm" variant="outline" onClick={handleOpenLogDetailsDialog} className="text-xs flex-1 sm:flex-initial">
+                <Edit2 className="mr-1.5 h-3.5 w-3.5"/> Log Details
               </Button>
             )}
           </div>
         </CardFooter>
       </Card>
 
-      {currentUserRole === 'admin' && onAssignStaff && (
+      {/* Dialog for admin to assign staff */}
+      {canAdminAssign && (
         <AssignStaffDialog
           isOpen={isAssignDialogOpen}
           onClose={() => setIsAssignDialogOpen(false)}
           requestId={request.id}
           currentAssignedStaffId={request.assignedStaffId}
-          staffList={staffList.filter(s => s.role === 'mechanic')} // Only show mechanics for assignment
-          onAssignStaff={onAssignStaff}
+          staffList={assignableStaffList} // Use assignable (available) staff
+          onAssignStaff={(reqId, staffId) => {
+            if(onAssignStaff) onAssignStaff(reqId, staffId);
+            setIsAssignDialogOpen(false);
+          }}
         />
       )}
-      {currentUserRole === 'mechanic' && isCurrentUserAssignedMechanic && (
+      {/* Dialog for mechanic to log details */}
+      {(currentUserRole === 'mechanic' && isCurrentUserAssignedMechanic && (request.status === 'Accepted' || request.status === 'In Progress' || isLogDetailsDialogOpen && targetStatusOnSubmitForLogging === 'Completed')) && (
          <LogMechanicDetailsDialog
             isOpen={isLogDetailsDialogOpen}
             onClose={() => setIsLogDetailsDialogOpen(false)}
             request={request}
-            onSubmit={handleMechanicLogSubmit}
+            onSubmitLog={handleLogSubmit}
+            targetStatusOnSubmit={targetStatusOnSubmitForLogging}
          />
       )}
     </>
