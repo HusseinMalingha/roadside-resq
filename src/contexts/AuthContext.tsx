@@ -4,7 +4,7 @@
 import type { ReactNode, FC } from 'react';
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { 
-  auth as firebaseAuthInstance, // Renamed import
+  auth as firebaseAuthInstance, 
   GoogleAuthProvider, 
   signInWithPopup, 
   signOut as firebaseSignOut, 
@@ -13,12 +13,11 @@ import {
   signInWithPhoneNumber, 
   type ConfirmationResult, 
   onAuthStateChanged,
-  type FirebaseAuthType // Ensure this type is correctly imported or defined if not from 'firebase/auth'
-} from '@/lib/firebase'; // Correct path to firebase.ts
+  type FirebaseAuthType 
+} from '@/lib/firebase'; 
 import { useRouter } from 'next/navigation';
 import { useToast } from "@/hooks/use-toast";
 
-// Define roles
 export type UserRole = 'admin' | 'mechanic' | 'user' | null;
 
 const ADMIN_EMAILS = ['admin@roadside.com', 'admin@example.com'];
@@ -28,7 +27,7 @@ interface AuthContextType {
   user: User | null;
   role: UserRole;
   loading: boolean;
-  isFirebaseReady: boolean; // New state to indicate if Firebase auth is usable
+  isFirebaseReady: boolean;
   signInWithGoogle: () => Promise<void>;
   signInWithPhoneNumberStep1: (phoneNumber: string, appVerifier: RecaptchaVerifier) => Promise<ConfirmationResult | null>;
   signInWithPhoneNumberStep2: (confirmationResult: ConfirmationResult, verificationCode: string) => Promise<void>;
@@ -68,12 +67,12 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
     } else {
       setIsFirebaseReady(false);
       setLoading(false);
-      if (typeof window !== 'undefined') { // Only show toast on client
+      if (typeof window !== 'undefined') {
         toast({
           title: "Firebase Not Configured",
-          description: "Authentication services are unavailable. Please check the console for details and ensure Firebase is correctly set up with environment variables.",
+          description: "Authentication services are unavailable. Please check environment variables.",
           variant: "destructive",
-          duration: 10000, // Keep it visible for a while
+          duration: 10000,
         });
       }
       console.warn("AuthContext: Firebase auth instance is not available. Auth features will be disabled.");
@@ -82,35 +81,38 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
 
   const signInWithGoogle = async () => {
     if (!firebaseAuthInstance || !isFirebaseReady) {
-      toast({ title: "Error", description: "Firebase not configured. Cannot sign in.", variant: "destructive" });
+      toast({ title: "Authentication Error", description: "Firebase not configured. Cannot sign in with Google.", variant: "destructive" });
       console.error("signInWithGoogle: Firebase not ready.");
       return;
     }
+    setLoading(true);
     try {
       const provider = new GoogleAuthProvider();
       await signInWithPopup(firebaseAuthInstance, provider);
-      toast({ title: "Success", description: "Signed in with Google successfully." });
+      toast({ title: "Sign-In Successful", description: "Signed in with Google." });
     } catch (error: any) {
       console.error("Error signing in with Google:", error);
-      toast({ title: "Error", description: error.message || "Failed to sign in with Google.", variant: "destructive" });
+      toast({ title: "Google Sign-In Failed", description: error.message || "An unexpected error occurred.", variant: "destructive" });
       throw error;
+    } finally {
+      setLoading(false);
     }
   };
   
   const setupRecaptcha = useCallback((elementId: string): RecaptchaVerifier | null => {
     if (!firebaseAuthInstance || !isFirebaseReady) {
       console.error("setupRecaptcha: Firebase not configured. Cannot setup reCAPTCHA.");
-      toast({ title: "Setup Error", description: "Firebase not ready for reCAPTCHA.", variant: "destructive" });
+      // Toast is handled by the caller (LoginPage) if setup fails and verifier is null
       return null;
     }
     if (typeof window !== 'undefined') {
       const recaptchaContainer = document.getElementById(elementId);
       if (recaptchaContainer) {
+        // Clear previous reCAPTCHA instances from the container to prevent errors
         while (recaptchaContainer.firstChild) {
             recaptchaContainer.removeChild(recaptchaContainer.firstChild);
         }
         try {
-          // Ensure firebaseAuthInstance is of type Auth (FirebaseAuthType)
           const verifier = new RecaptchaVerifier(
             firebaseAuthInstance as FirebaseAuthType, 
             recaptchaContainer,
@@ -119,87 +121,111 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
               'callback': () => { /* reCAPTCHA solved */ },
               'expired-callback': () => {
                 toast({ title: "ReCAPTCHA Expired", description: "Please try verifying again.", variant: "destructive" });
+                // Potentially clear and nullify verifier in LoginPage state here
               }
             }
           );
           return verifier;
         } catch (e: any) {
           console.error("Error initializing RecaptchaVerifier:", e);
-          toast({ title: "ReCAPTCHA Setup Failed", description: `Could not initialize reCAPTCHA: ${e.message || 'Unknown error'}. Try refreshing.`, variant: "destructive" });
+          toast({ title: "ReCAPTCHA Setup Failed", description: `Could not initialize reCAPTCHA: ${e.message || 'Unknown error'}. Please refresh the page.`, variant: "destructive" });
           return null;
         }
       } else {
-        console.warn(`Recaptcha container with id '${elementId}' not found in the DOM.`);
+        console.warn(`Recaptcha container with id '${elementId}' not found. ReCAPTCHA setup will fail.`);
         return null;
       }
     }
     return null;
-  }, [toast, isFirebaseReady]);
+  }, [isFirebaseReady, toast]); // firebaseAuthInstance is stable after init
 
   const signInWithPhoneNumberStep1 = async (phoneNumber: string, appVerifier: RecaptchaVerifier): Promise<ConfirmationResult | null> => {
     if (!firebaseAuthInstance || !isFirebaseReady) {
-      toast({ title: "Error", description: "Firebase not configured. Cannot send OTP.", variant: "destructive" });
+      toast({ title: "Authentication Error", description: "Firebase not configured. Cannot send OTP.", variant: "destructive" });
       console.error("signInWithPhoneNumberStep1: Firebase not ready.");
       return null;
     }
+    setLoading(true);
     try {
       const confirmationResult = await signInWithPhoneNumber(firebaseAuthInstance, phoneNumber, appVerifier);
       toast({ title: "OTP Sent", description: "An OTP has been sent to your phone number." });
       return confirmationResult;
-    } catch (error: any) {
+    } catch (error: any) {      
       console.error("Error sending OTP:", error);
-      toast({ title: "Error Sending OTP", description: error.message || "Failed to send OTP. Check the phone number and try again.", variant: "destructive" });
-      // Reset reCAPTCHA
-      if (appVerifier && typeof window !== 'undefined' && (window as any).grecaptcha) {
-        try {
-            const widgetId = (appVerifier as any).widgetId; 
-            if (widgetId !== undefined && (window as any).grecaptcha.reset) {
-                 (window as any).grecaptcha.reset(widgetId);
-            } else {
-                 appVerifier.clear();
-            }
-        } catch (resetError) {
-            console.error("Error resetting reCAPTCHA: ", resetError);
-        }
+      let errorMessage = "Failed to send OTP. Please check the phone number and try again.";
+      if (error.code === 'auth/invalid-phone-number') {
+        errorMessage = "Invalid phone number format. Please use E.164 format (e.g., +16505551234).";
+      } else if (error.code === 'auth/too-many-requests') {
+        errorMessage = "Too many requests. Please try again later.";
+      } else if (error.code === 'auth/network-request-failed') {
+        errorMessage = "Network error. Please check your connection and try again.";
+      } else if (error.message?.includes("reCAPTCHA")) {
+        errorMessage = "ReCAPTCHA verification failed. Please try again.";
+      }
+      
+      toast({ title: "Error Sending OTP", description: errorMessage, variant: "destructive" });
+      
+      // Attempt to clear the appVerifier to force re-initialization on next try
+      // This is now primarily handled in LoginPage by setting appVerifier state to null
+      try {
+        appVerifier.clear();
+      } catch(e) {
+        console.warn("Could not clear appVerifier during OTP send error:", e);
       }
       return null; 
+    } finally {
+      setLoading(false);
     }
   };
 
   const signInWithPhoneNumberStep2 = async (confirmationResult: ConfirmationResult, verificationCode: string) => {
     if (!firebaseAuthInstance || !isFirebaseReady) {
-      toast({ title: "Error", description: "Firebase not configured. Cannot verify OTP.", variant: "destructive" });
+      toast({ title: "Authentication Error", description: "Firebase not configured. Cannot verify OTP.", variant: "destructive" });
       console.error("signInWithPhoneNumberStep2: Firebase not ready.");
       throw new Error("Firebase not configured.");
     }
+    setLoading(true);
     try {
       await confirmationResult.confirm(verificationCode);
-      toast({ title: "Success", description: "Signed in with phone number successfully." });
+      toast({ title: "Sign-In Successful", description: "Signed in with phone number." });
     } catch (error: any) {
       console.error("Error verifying OTP:", error);
-      toast({ title: "Error Verifying OTP", description: error.message || "Invalid OTP or an error occurred.", variant: "destructive" });
+      let errorMessage = "Invalid OTP or an error occurred.";
+      if (error.code === 'auth/invalid-verification-code') {
+        errorMessage = "Invalid verification code. Please try again.";
+      } else if (error.code === 'auth/code-expired') {
+        errorMessage = "The verification code has expired. Please request a new one.";
+      }
+      toast({ title: "Error Verifying OTP", description: errorMessage, variant: "destructive" });
       throw error; 
+    } finally {
+      setLoading(false);
     }
   };
 
-  const signOut = async () => {
+  const signOutUser = async () => { // Renamed to avoid conflict with firebaseSignOut
     if (!firebaseAuthInstance || !isFirebaseReady) {
-      toast({ title: "Error", description: "Firebase not configured. Cannot sign out.", variant: "destructive" });
+      toast({ title: "Authentication Error", description: "Firebase not configured. Cannot sign out.", variant: "destructive" });
       console.error("signOut: Firebase not ready.");
       return;
     }
+    setLoading(true);
     try {
       await firebaseSignOut(firebaseAuthInstance);
-      toast({ title: "Signed Out", description: "You have been signed out." });
-      router.push('/'); 
+      toast({ title: "Signed Out", description: "You have been signed out successfully." });
+      setUser(null); // Explicitly set user to null
+      setRole(null);   // Explicitly set role to null
+      router.push('/login'); // Redirect to login after sign out
     } catch (error: any) {
       console.error("Error signing out:", error);
-      toast({ title: "Error", description: error.message || "Failed to sign out.", variant: "destructive" });
+      toast({ title: "Sign-Out Failed", description: error.message || "An unexpected error occurred.", variant: "destructive" });
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <AuthContext.Provider value={{ user, role, loading, isFirebaseReady, signInWithGoogle, signInWithPhoneNumberStep1, signInWithPhoneNumberStep2, signOut, setupRecaptcha }}>
+    <AuthContext.Provider value={{ user, role, loading, isFirebaseReady, signInWithGoogle, signInWithPhoneNumberStep1, signInWithPhoneNumberStep2, signOut: signOutUser, setupRecaptcha }}>
       {children}
     </AuthContext.Provider>
   );
@@ -212,3 +238,4 @@ export const useAuth = (): AuthContextType => {
   }
   return context;
 };
+

@@ -8,10 +8,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, LogIn, Phone, KeyRound } from 'lucide-react';
+import { Loader2, LogIn, Phone, KeyRound, AlertCircle } from 'lucide-react';
 import type { ConfirmationResult, RecaptchaVerifier } from 'firebase/auth';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useToast } from '@/hooks/use-toast';
 
 const LoginPage: FC = () => {
   const { 
@@ -21,10 +22,11 @@ const LoginPage: FC = () => {
     loading: authLoading, 
     setupRecaptcha, 
     user,
-    isFirebaseReady // Added from AuthContext
+    isFirebaseReady
   } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { toast } = useToast();
 
   const [phoneNumber, setPhoneNumber] = useState('');
   const [otp, setOtp] = useState('');
@@ -36,64 +38,113 @@ const LoginPage: FC = () => {
   const redirectUrl = searchParams.get('redirect') || '/';
 
   useEffect(() => {
+    if (user && !authLoading) {
+      router.push(redirectUrl);
+    }
+  }, [user, authLoading, router, redirectUrl]);
+
+  useEffect(() => {
+    // Only setup reCAPTCHA if Firebase is ready, it's client-side, and verifier isn't already set.
     if (isFirebaseReady && typeof window !== 'undefined' && !appVerifier) {
       const verifier = setupRecaptcha('recaptcha-container-invisible');
       if (verifier) {
         setAppVerifier(verifier);
+      } else {
+        // Toast if setup failed and verifier is still null
+        if (!appVerifier) {
+             toast({
+                title: "ReCAPTCHA Setup Issue",
+                description: "Could not initialize reCAPTCHA. Phone sign-in might not work. Please refresh or try Google Sign-In.",
+                variant: "destructive",
+                duration: 7000,
+            });
+        }
       }
     }
-  }, [setupRecaptcha, appVerifier, isFirebaseReady]);
+    // Cleanup function for appVerifier when component unmounts or dependencies change
+    return () => {
+      if (appVerifier) {
+        // appVerifier.clear(); // This might be too aggressive if navigating away and back
+      }
+    };
+  }, [setupRecaptcha, appVerifier, isFirebaseReady, toast]);
 
 
   const handleGoogleSignIn = async () => {
-    if (!isFirebaseReady) return;
+    if (!isFirebaseReady) {
+      toast({ title: "Service Unavailable", description: "Authentication services not ready.", variant: "destructive"});
+      return;
+    }
     setIsSubmitting(true);
     try {
       await signInWithGoogle();
-      router.push(redirectUrl);
+      // router.push(redirectUrl); // Redirection is handled by the first useEffect
     } catch (error) {
+      // Error is toasted by AuthContext
+    } finally {
       setIsSubmitting(false); 
     }
   };
 
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isFirebaseReady) return;
-    if (!phoneNumber || !appVerifier) {
-      if(!appVerifier && isFirebaseReady) { // Attempt to re-setup verifier if not present and Firebase is ready
-         const verifier = setupRecaptcha('recaptcha-container-invisible');
-         if (verifier) {
-           setAppVerifier(verifier);
-         } else {
-            // Failed to setup verifier, cannot proceed
-            return;
-         }
-      } else if (!appVerifier && !isFirebaseReady) {
-        // Firebase not ready, cannot proceed
-        return;
-      } else if (!phoneNumber) {
-        // Phone number missing
-        return;
-      }
+    // Critical preconditions, mostly ensured by button's disabled state
+    if (!isFirebaseReady || !appVerifier || !phoneNumber.trim()) {
+      toast({
+        title: "Cannot Send OTP",
+        description: !isFirebaseReady ? "Authentication service is not ready." : !appVerifier ? "ReCAPTCHA verifier is not ready." : "Phone number is required.",
+        variant: "destructive",
+      });
+      setIsSubmitting(false);
+      return;
     }
+
     setIsSubmitting(true);
     const result = await signInWithPhoneNumberStep1(phoneNumber, appVerifier);
     if (result) {
       setConfirmationResult(result);
       setOtpSent(true);
+    } else {
+      // signInWithPhoneNumberStep1 failed (returned null), likely a reCAPTCHA or phone number issue.
+      // Clear the current appVerifier to force a re-setup on next attempt (via useEffect).
+      if (appVerifier) {
+        try {
+          appVerifier.clear(); // Clear the reCAPTCHA widget
+        } catch (clearError) {
+          console.error("Error clearing appVerifier:", clearError);
+        }
+      }
+      setAppVerifier(null); // This will trigger the useEffect to re-initialize
+      toast({
+        title: "OTP Send Failed",
+        description: "Could not send OTP. Please check your phone number and reCAPTCHA, then try again.",
+        variant: "destructive"
+      });
     }
     setIsSubmitting(false);
   };
 
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isFirebaseReady) return;
-    if (!otp || !confirmationResult) return;
+    if (!isFirebaseReady) {
+       toast({ title: "Service Unavailable", description: "Authentication services not ready.", variant: "destructive"});
+      return;
+    }
+    if (!otp.trim() || !confirmationResult) {
+      toast({
+        title: "Cannot Verify OTP",
+        description: !otp.trim() ? "OTP is required." : "Confirmation result is missing.",
+        variant: "destructive",
+      });
+      return;
+    }
     setIsSubmitting(true);
     try {
       await signInWithPhoneNumberStep2(confirmationResult, otp);
-      router.push(redirectUrl);
+      // router.push(redirectUrl); // Redirection is handled by the first useEffect
     } catch (error) {
+      // Error is toasted by AuthContext
+    } finally {
       setIsSubmitting(false); 
     }
   };
@@ -105,6 +156,18 @@ const LoginPage: FC = () => {
       </div>
     );
   }
+  
+  // If user is already logged in, effect above should redirect.
+  // This is a fallback if the effect hasn't run yet or for some edge case.
+  if (user && !authLoading) {
+     return (
+      <div className="flex-grow flex items-center justify-center">
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+        <p className="ml-4">Redirecting...</p>
+      </div>
+    );
+  }
+
 
   return (
     <div className="flex-grow flex items-center justify-center p-4">
@@ -116,9 +179,13 @@ const LoginPage: FC = () => {
         </CardHeader>
         <CardContent>
           {!isFirebaseReady && (
-            <div className="text-center text-destructive mb-4">
-              Authentication services are currently unavailable. Please try again later.
-            </div>
+            <Alert variant="destructive" className="mb-4 text-center">
+                <AlertCircle className="h-4 w-4 inline-block mr-2" />
+                <AlertTitle className="inline font-semibold">Authentication Unavailable</AlertTitle>
+                <AlertDescription className="block text-xs">
+                    Services are currently offline. Please try again later.
+                </AlertDescription>
+            </Alert>
           )}
           <Tabs defaultValue="phone" className="w-full">
             <TabsList className="grid w-full grid-cols-2">
@@ -140,7 +207,11 @@ const LoginPage: FC = () => {
                       disabled={isSubmitting || !isFirebaseReady}
                     />
                   </div>
-                  <Button type="submit" className="w-full" disabled={isSubmitting || !appVerifier || !isFirebaseReady}>
+                  <Button 
+                    type="submit" 
+                    className="w-full" 
+                    disabled={isSubmitting || !appVerifier || !isFirebaseReady || !phoneNumber.trim()}
+                  >
                     {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Phone className="mr-2 h-4 w-4" />}
                     Send OTP
                   </Button>
@@ -159,12 +230,12 @@ const LoginPage: FC = () => {
                       disabled={isSubmitting || !isFirebaseReady}
                     />
                   </div>
-                  <Button type="submit" className="w-full" disabled={isSubmitting || !isFirebaseReady}>
+                  <Button type="submit" className="w-full" disabled={isSubmitting || !isFirebaseReady || !otp.trim()}>
                     {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <KeyRound className="mr-2 h-4 w-4" />}
                     Verify OTP
                   </Button>
                   <Button variant="link" onClick={() => {setOtpSent(false); setOtp(''); setConfirmationResult(null);}} className="text-sm p-0 h-auto" disabled={isSubmitting || !isFirebaseReady}>
-                    Change phone number?
+                    Change phone number or resend OTP?
                   </Button>
                 </form>
               )}
@@ -172,7 +243,7 @@ const LoginPage: FC = () => {
             </TabsContent>
             <TabsContent value="google" className="pt-4">
                <Button onClick={handleGoogleSignIn} variant="outline" className="w-full text-base py-6" disabled={isSubmitting || !isFirebaseReady}>
-                {isSubmitting ? (
+                {isSubmitting && authLoading ? ( // Show loader if this specific action is submitting
                   <Loader2 className="mr-2 h-5 w-5 animate-spin" />
                 ) : (
                   <svg className="mr-2 h-5 w-5" aria-hidden="true" focusable="false" data-prefix="fab" data-icon="google" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512">
