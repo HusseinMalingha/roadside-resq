@@ -1,19 +1,19 @@
 
 "use client";
 
-import { useEffect }_from_ 'react';
-import { useRouter }_from_ 'next/navigation';
-import { useAuth }_from_ '@/contexts/AuthContext';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }_from_ '@/components/ui/card';
-import { Button }_from_ '@/components/ui/button';
-import { Loader2, UserCircle, AlertCircle, Home }_from_ 'lucide-react';
-import Link _from_ 'next/link';
-import EditProfileForm _from_ '@/components/profile/EditProfileForm';
-import EditVehicleInfoForm _from_ '@/components/profile/EditVehicleInfoForm';
-import { Separator }_from_ '@/components/ui/separator';
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/contexts/AuthContext';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Loader2, UserCircle, AlertCircle, Home } from 'lucide-react';
+import Link from 'next/link';
+import EditProfileForm from '@/components/profile/EditProfileForm';
+import EditVehicleInfoForm from '@/components/profile/EditVehicleInfoForm';
+import { Separator } from '@/components/ui/separator';
 
 export default function ProfileClientPage() {
-  const { user, userProfile, loading: authLoading, isFirebaseReady, role, refreshUserProfile }_from_ useAuth();
+  const { user, userProfile, loading: authLoading, isFirebaseReady, role, refreshUserProfile } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
@@ -138,3 +138,4 @@ export default function ProfileClientPage() {
     </div>
   );
 }
+
