@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
@@ -11,7 +10,7 @@ import VehicleInfoForm from '@/components/VehicleInfoForm';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { CheckCircle, MessageSquareHeart, Car, Clock, Loader2, ArrowLeft, Home, RefreshCw, LogIn, AlertCircle as AlertCircleIcon, Send, Settings } from 'lucide-react';
+import { CheckCircle, MessageSquareHeart, Car, Clock, Loader2, ArrowLeft, Home, RefreshCw, LogIn, AlertCircle as AlertCircleIcon, Send, Settings, Navigation } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
@@ -23,7 +22,7 @@ import { getAllGarages } from '@/services/garageService';
 type AppStep = 'initial' | 'details' | 'providers' | 'tracking' | 'completed';
 
 export default function RoadsideRescuePage() {
-  const { user, userProfile, role, loading: authLoading, isFirebaseReady } = useAuth(); // Added userProfile
+  const { user, userProfile, role, loading: authLoading, isFirebaseReady, activeRequest, isLoadingActiveRequest } = useAuth();
   const router = useRouter();
 
   const [currentStep, setCurrentStep] = useState<AppStep>('initial');
@@ -39,9 +38,9 @@ export default function RoadsideRescuePage() {
   const [serviceRequest, setServiceRequest] = useState<ServiceRequestType | null>(null);
   const [serviceRequestId, setServiceRequestId] = useState<string | null>(null); 
 
-  const [isLocationConfirmed, setIsLocationConfirmed] = useState(false);
-  const [isIssueConfirmed, setIsIssueConfirmed] = useState(false);
-  const [isVehicleInfoConfirmed, setIsVehicleInfoConfirmed] = useState(false);
+  const [isLocationConfirmed, setIsLocationConfirmed] = useState(isFirebaseReady ? false : true);
+  const [isIssueConfirmed, setIsIssueConfirmed] = useState(isFirebaseReady ? false : true);
+  const [isVehicleInfoConfirmed, setIsVehicleInfoConfirmed] = useState(isFirebaseReady ? false : true);
   const [isLoadingDraft, setIsLoadingDraft] = useState(true);
   const [availableProviders, setAvailableProviders] = useState<ServiceProvider[]>([]);
   const [isLoadingProviders, setIsLoadingProviders] = useState(false);
@@ -68,7 +67,7 @@ export default function RoadsideRescuePage() {
   }, [isFirebaseReady, toast]);
 
   const persistDraft = useCallback(async () => {
-    if (user && currentStep === 'details' && isFirebaseReady) { 
+    if (user && currentStep === 'details' && isFirebaseReady && !activeRequest) { // Only save draft if no active request
       const draftData: Partial<Omit<DraftServiceRequestData, 'userId' | 'lastUpdated'>> = {
         userLocation: userLocation,
         issueDescription: issueDescription,
@@ -81,17 +80,17 @@ export default function RoadsideRescuePage() {
         console.warn("Failed to save draft to Firestore:", error);
       }
     }
-  }, [user, userLocation, issueDescription, confirmedIssueSummary, vehicleInfo, currentStep, isFirebaseReady]);
+  }, [user, userLocation, issueDescription, confirmedIssueSummary, vehicleInfo, currentStep, isFirebaseReady, activeRequest]);
 
   useEffect(() => {
-    if (user && currentStep === 'details' && !isLoadingDraft && isFirebaseReady) {
+    if (user && currentStep === 'details' && !isLoadingDraft && isFirebaseReady && !activeRequest) {
       persistDraft();
     }
-  }, [userLocation, issueDescription, confirmedIssueSummary, vehicleInfo, user, currentStep, persistDraft, isLoadingDraft, isFirebaseReady]);
+  }, [userLocation, issueDescription, confirmedIssueSummary, vehicleInfo, user, currentStep, persistDraft, isLoadingDraft, isFirebaseReady, activeRequest]);
 
   useEffect(() => {
     const loadDraft = async () => {
-      if (user && currentStep === 'details' && isFirebaseReady) {
+      if (user && currentStep === 'details' && isFirebaseReady && !activeRequest) { // Don't load draft if active request exists
         setIsLoadingDraft(true);
         try {
           const draft = await getDraftRequest(user.uid);
@@ -105,7 +104,6 @@ export default function RoadsideRescuePage() {
               setConfirmedIssueSummary(draft.issueSummary);
               if(draft.issueDescription) setIsIssueConfirmed(true); 
             }
-            // Vehicle info from draft is still loaded here, not from profile for a draft.
             if (draft.vehicleInfo) {
               setVehicleInfo(draft.vehicleInfo);
               setIsVehicleInfoConfirmed(true);
@@ -129,7 +127,32 @@ export default function RoadsideRescuePage() {
         loadDraft();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, currentStep, isFirebaseReady]); 
+  }, [user, currentStep, isFirebaseReady, activeRequest]); // Added activeRequest to dependencies
+
+  // Effect to handle active request on page load or user change
+  useEffect(() => {
+    if (user && !authLoading && !isLoadingActiveRequest && activeRequest && currentStep !== 'tracking' && currentStep !== 'completed') {
+      // User has an active request, let's set up the page to show it
+      setServiceRequest(activeRequest);
+      setServiceRequestId(activeRequest.id);
+      setSelectedProvider(activeRequest.selectedProvider);
+      setProviderETA(activeRequest.selectedProvider.etaMinutes);
+      setProviderCurrentLocation(activeRequest.selectedProvider.currentLocation);
+      setUserLocation(activeRequest.userLocation);
+      setConfirmedIssueSummary(activeRequest.issueSummary);
+      setVehicleInfo(activeRequest.vehicleInfo || null);
+      setIssueDescription(activeRequest.issueDescription || '');
+
+
+      setCurrentStep('tracking');
+      toast({
+        title: "Active Request Found",
+        description: `Displaying your ongoing request: ${activeRequest.requestId}`,
+        duration: 5000,
+      });
+    }
+  }, [user, activeRequest, isLoadingActiveRequest, authLoading, currentStep, toast]);
+
 
   const handleLocationAcquired = useCallback((location: Location) => {
     setUserLocation(location);
@@ -183,7 +206,6 @@ export default function RoadsideRescuePage() {
     setHasProviderArrivedSimulation(false); 
     
     if (userLocation && user && vehicleInfo && isFirebaseReady) { 
-      // Determine user phone: Profile contact > Auth phone > "N/A"
       const userContactPhone = userProfile?.contactPhoneNumber || user.phoneNumber || "N/A";
 
       const newRequestData: Omit<ServiceRequestType, 'id' | 'requestTime'> & { requestTime: Date } = {
@@ -198,7 +220,7 @@ export default function RoadsideRescuePage() {
         requestTime: new Date(), 
         status: 'Pending', 
         userName: userProfile?.displayName || user.displayName || user.email || "N/A",
-        userPhone: userContactPhone, // Use determined contact phone
+        userPhone: userContactPhone,
       };
       
       try {
@@ -249,28 +271,50 @@ export default function RoadsideRescuePage() {
   };
   
   const handleInitialAction = () => {
-    if (!isFirebaseReady) { 
+    if (!isFirebaseReady || authLoading || isLoadingActiveRequest) { 
       toast({
         title: "Service Unavailable",
-        description: "Services are not ready. Please try again later.",
+        description: "Services are not ready or still loading. Please try again in a moment.",
         variant: "destructive",
       });
       return;
     }
-    if (!user && !authLoading) {
+    if (!user) { // User not logged in
       router.push('/login?redirect=/'); 
-    } else if (user) {
-      if (role === 'admin' || role === 'mechanic' || role === 'customer_relations') {
+      return;
+    }
+    
+    if (isStaffUser) { // Staff user
         toast({
           title: "Staff Account",
           description: "Staff members cannot make service requests. Redirecting to Garage Management.",
-          variant: "default",
         });
         router.push('/garage-admin');
         return;
       }
-      setCurrentStep('details');
+
+    if (activeRequest) { // User has an active request
+        toast({
+            title: "Active Request Exists",
+            description: "You already have an ongoing service request. We're taking you to it.",
+        });
+        // The useEffect for activeRequest should handle setting state and moving to 'tracking'
+        // If for some reason it doesn't, we can force it here:
+        setServiceRequest(activeRequest);
+        setServiceRequestId(activeRequest.id);
+        setSelectedProvider(activeRequest.selectedProvider);
+        setProviderETA(activeRequest.selectedProvider.etaMinutes);
+        setProviderCurrentLocation(activeRequest.selectedProvider.currentLocation);
+        setUserLocation(activeRequest.userLocation);
+        setConfirmedIssueSummary(activeRequest.issueSummary);
+        setVehicleInfo(activeRequest.vehicleInfo || null);
+        setIssueDescription(activeRequest.issueDescription || '');
+        setCurrentStep('tracking');
+        return;
     }
+    
+    // Regular user, no active request
+    setCurrentStep('details');
   };
 
 
@@ -292,20 +336,13 @@ export default function RoadsideRescuePage() {
         
         if (newServiceRequest.selectedProvider) {
             setSelectedProvider(newServiceRequest.selectedProvider);
-            // Do not update ETA or provider location from here, as simulation handles it.
-            // setProviderETA(newServiceRequest.selectedProvider.etaMinutes); 
-            // setProviderCurrentLocation(newServiceRequest.selectedProvider.currentLocation); 
         }
 
         if (newServiceRequest.status === 'Completed' || newServiceRequest.status === 'Cancelled') {
           setCurrentStep('completed');
         }
       } else {
-        // This might happen if the request is deleted or ID is incorrect
         console.warn(`Request with ID ${serviceRequestId} not found or inaccessible.`);
-        // Optionally, handle this by resetting the view or showing an error
-        // resetApp(); // Or navigate to an error page or home
-        // toast({ title: "Request Error", description: "Could not track your request.", variant: "destructive"});
       }
     });
 
@@ -316,20 +353,17 @@ export default function RoadsideRescuePage() {
   useEffect(() => {
     let trackingInterval: NodeJS.Timeout | null = null;
     if (currentStep === 'tracking' && selectedProvider && userLocation && providerETA !== null && serviceRequest && (serviceRequest.status === 'Accepted' || serviceRequest.status === 'In Progress')) {
-        // Use initial provider location for simulation start
         const initialSimProviderLoc = selectedProvider.currentLocation;
         let currentSimulatedProviderLat = initialSimProviderLoc.lat;
         let currentSimulatedProviderLng = initialSimProviderLoc.lng;
         
-        setProviderCurrentLocation(initialSimProviderLoc); // Set initial display location
+        setProviderCurrentLocation(initialSimProviderLoc); 
 
         const userLat = userLocation.lat;
         const userLng = userLocation.lng;
         
-        // Simulate arrival based on a fraction of ETA, max 2 minutes for demo.
-        // The simulation moves the provider over a fixed time, not strictly by ETA.
-        const simulationDurationSeconds = Math.min(providerETA * 60 * 0.25, 120); // e.g. simulate 1/4 of ETA, or 2 mins max
-        const updateIntervalMs = 2000; // Update every 2 seconds
+        const simulationDurationSeconds = Math.min(providerETA * 60 * 0.25, 120); 
+        const updateIntervalMs = 2000; 
         let elapsedSimulationTimeMs = 0;
 
         trackingInterval = setInterval(() => {
@@ -363,7 +397,7 @@ export default function RoadsideRescuePage() {
   const isStaffUser = user && (role === 'admin' || role === 'mechanic' || role === 'customer_relations');
 
   const renderStepContent = () => {
-    if ((authLoading || isLoadingProviders) && currentStep === 'initial') {
+    if ((authLoading || isLoadingProviders || (currentStep === 'initial' && isLoadingActiveRequest)) && currentStep === 'initial') {
       return (
         <div className="flex flex-col items-center justify-center flex-grow w-full py-8">
           <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -417,10 +451,11 @@ export default function RoadsideRescuePage() {
                   size="lg" 
                   className="w-full text-lg py-7 bg-accent hover:bg-accent/90 text-accent-foreground" 
                   onClick={handleInitialAction}
-                  disabled={authLoading || !isFirebaseReady || isLoadingProviders} 
+                  disabled={authLoading || !isFirebaseReady || isLoadingProviders || isLoadingActiveRequest} 
                 >
-                  {authLoading || isLoadingProviders ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : 
+                  {authLoading || isLoadingProviders || isLoadingActiveRequest ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : 
                     !user ? <><LogIn className="mr-2 h-5 w-5" /> Login to Request</> : 
+                    activeRequest ? <><Navigation className="mr-2 h-5 w-5" /> Track Active Request</> :
                     "Request Assistance Now"
                   }
                 </Button>
@@ -439,6 +474,31 @@ export default function RoadsideRescuePage() {
             resetApp(); 
             return <div className="flex-grow flex items-center justify-center"><Loader2 className="h-12 w-12 animate-spin text-primary" /><p className="ml-3">Redirecting Staff...</p></div>;
         }
+
+        if (isLoadingActiveRequest) {
+            return (
+                <div className="flex flex-col items-center justify-center flex-grow w-full py-8">
+                    <Loader2 className="h-12 w-12 animate-spin text-primary" />
+                    <p className="mt-4 text-muted-foreground">Checking for active requests...</p>
+                </div>
+            );
+        }
+        if (activeRequest && !isLoadingActiveRequest) { // Should be caught by useEffect, but as a safeguard
+            return (
+              <Card className="w-full max-w-md text-center shadow-xl animate-fadeIn">
+                <CardHeader>
+                  <CardTitle className="text-2xl">Active Request Exists</CardTitle>
+                  <CardDescription>You have an ongoing service request ({activeRequest.requestId}).</CardDescription>
+                </CardHeader>
+                <CardFooter>
+                  <Button onClick={() => setCurrentStep('tracking')} className="w-full">
+                    <Navigation className="mr-2 h-4 w-4"/> Track Your Request
+                  </Button>
+                </CardFooter>
+              </Card>
+            );
+        }
+
         if (!isFirebaseReady && !authLoading) { 
              return (
                 <Alert variant="destructive" className="w-full max-w-md">
@@ -482,7 +542,7 @@ export default function RoadsideRescuePage() {
 
             <VehicleInfoForm 
               onVehicleInfoSubmit={handleVehicleInfoSubmit}
-              initialData={vehicleInfo || userProfile?.vehicleInfo || {}} // Pre-fill from profile if available, then draft, then empty
+              initialData={vehicleInfo || userProfile?.vehicleInfo || {}} 
               isSubmitted={isVehicleInfoConfirmed}
             />
             
@@ -528,7 +588,7 @@ export default function RoadsideRescuePage() {
         return (
           <div className="w-full max-w-2xl space-y-6 animate-fadeIn">
             <div className="flex justify-between items-center">
-              <Button variant="outline" onClick={() => setCurrentStep('providers')} className="mb-2 self-start" disabled={serviceRequest.status === 'Completed' || serviceRequest.status === 'Cancelled'}>
+              <Button variant="outline" onClick={() => setCurrentStep('providers')} className="mb-2 self-start" disabled={serviceRequest.status === 'Completed' || serviceRequest.status === 'Cancelled' || serviceRequest.status === 'In Progress'}>
                 <ArrowLeft className="mr-2 h-4 w-4" /> Change Provider
               </Button>
               <span className={`px-3 py-1 text-sm font-semibold rounded-full text-white ${
@@ -641,4 +701,3 @@ export default function RoadsideRescuePage() {
     </div>
   );
 }
-

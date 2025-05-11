@@ -1,4 +1,3 @@
-
 "use client";
 
 import type { ReactNode, FC } from 'react';
@@ -19,7 +18,9 @@ import { getStaffMemberByEmail } from '@/services/staffService';
 import { getUserProfile, updateUserProfile } from '@/services/userService'; // Import userService functions
 import { useRouter } from 'next/navigation';
 import { useToast } from "@/hooks/use-toast";
-import type { UserRole, UserProfile } from '@/types'; 
+import type { UserRole, UserProfile, ServiceRequest as ServiceRequestType } from '@/types'; 
+import { listenToActiveUserRequest } from '@/services/requestService';
+
 
 const ADMIN_EMAIL = 'husseinmalingha@gmail.com';
 const ADMIN_PHONE_NUMBER = '+256759794023';
@@ -36,6 +37,8 @@ interface AuthContextType {
   signOut: () => Promise<void>;
   setupRecaptcha: (elementId: string) => RecaptchaVerifier | null;
   refreshUserProfile: () => Promise<void>; // Function to manually refresh profile
+  activeRequest: ServiceRequestType | null;
+  isLoadingActiveRequest: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -46,6 +49,8 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
   const [role, setRole] = useState<UserRole | null>(null);
   const [loading, setLoading] = useState(true);
   const [isFirebaseReady, setIsFirebaseReady] = useState(false);
+  const [activeRequest, setActiveRequest] = useState<ServiceRequestType | null>(null);
+  const [isLoadingActiveRequest, setIsLoadingActiveRequest] = useState(true);
   const router = useRouter();
   const { toast } = useToast();
 
@@ -92,22 +97,45 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
 
 
   useEffect(() => {
+    let unsubscribeActiveRequestListener: (() => void) | undefined;
+
     if (firebaseAuthInstance) { 
       setIsFirebaseReady(true);
-      const unsubscribe = onAuthStateChanged(firebaseAuthInstance, async (currentUser) => {
+      const unsubscribeAuth = onAuthStateChanged(firebaseAuthInstance, async (currentUser) => {
         setUser(currentUser);
         if (currentUser) {
+          setIsLoadingActiveRequest(true);
           await fetchAndSetUserProfile(currentUser);
+
+          if (unsubscribeActiveRequestListener) {
+            unsubscribeActiveRequestListener();
+          }
+          unsubscribeActiveRequestListener = listenToActiveUserRequest(currentUser.uid, (req) => {
+            setActiveRequest(req);
+            setIsLoadingActiveRequest(false);
+          });
+
         } else {
           setUserProfile(null);
           setRole(null);
+          setActiveRequest(null);
+          setIsLoadingActiveRequest(false);
+          if (unsubscribeActiveRequestListener) {
+            unsubscribeActiveRequestListener();
+          }
         }
-        setLoading(false);
+        setLoading(false); // Overall auth loading
       });
-      return () => unsubscribe();
+      return () => {
+        unsubscribeAuth();
+        if (unsubscribeActiveRequestListener) {
+          unsubscribeActiveRequestListener();
+        }
+      };
     } else {
       setIsFirebaseReady(false);
       setLoading(false); 
+      setIsLoadingActiveRequest(false);
       if (typeof window !== 'undefined') {
         toast({
           title: "Firebase Services Not Configured",
@@ -123,8 +151,9 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
 
   const refreshUserProfile = useCallback(async () => {
     if (user) {
-        setLoading(true);
+        setLoading(true); // Consider if this loading state should be separate or combined
         await fetchAndSetUserProfile(user);
+        // Active request is handled by its own listener, no need to manually refresh here typically
         setLoading(false);
     }
   }, [user, fetchAndSetUserProfile]);
@@ -267,6 +296,8 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
       setUser(null); 
       setUserProfile(null);
       setRole(null);   
+      setActiveRequest(null); // Clear active request on sign out
+      setIsLoadingActiveRequest(false);
       router.push('/login'); 
     } catch (error: any) {
       console.error("Error signing out:", error);
@@ -277,7 +308,7 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, userProfile, role, loading, isFirebaseReady, signInWithGoogle, signInWithPhoneNumberStep1, signInWithPhoneNumberStep2, signOut: signOutUser, setupRecaptcha, refreshUserProfile }}>
+    <AuthContext.Provider value={{ user, userProfile, role, loading, isFirebaseReady, signInWithGoogle, signInWithPhoneNumberStep1, signInWithPhoneNumberStep2, signOut: signOutUser, setupRecaptcha, refreshUserProfile, activeRequest, isLoadingActiveRequest }}>
       {children}
     </AuthContext.Provider>
   );
@@ -290,4 +321,3 @@ export const useAuth = (): AuthContextType => {
   }
   return context;
 };
-

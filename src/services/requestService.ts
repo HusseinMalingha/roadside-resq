@@ -1,5 +1,4 @@
-
-import { db, collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, query, where, orderBy, Timestamp, type DocumentSnapshot } from '@/lib/firebase';
+import { db, collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, query, where, orderBy, Timestamp, type DocumentSnapshot, limit } from '@/lib/firebase';
 import type { ServiceRequest, Location, VehicleInfo, ServiceProvider } from '@/types';
 
 const REQUESTS_COLLECTION = 'serviceRequests';
@@ -110,5 +109,88 @@ export const listenToRequestById = (requestId: string, callback: (request: Servi
     console.error(`Error listening to service request ${requestId}:`, error);
     callback(null);
   });
+  return unsubscribe;
+};
+
+export const listenToRequestsForUser = (
+  userId: string,
+  callback: (requests: ServiceRequest[]) => void
+): (() => void) => {
+  if (!db) {
+    console.error("Firestore not initialized. Cannot listen to requests for user.");
+    callback([]);
+    return () => {};
+  }
+
+  const q = query(
+    collection(db, REQUESTS_COLLECTION),
+    where("userId", "==", userId),
+    orderBy("requestTime", "desc")
+  );
+
+  const unsubscribe = onSnapshot(
+    q,
+    (querySnapshot) => {
+      const requestsList = querySnapshot.docs.map(requestFromDoc);
+      callback(requestsList);
+    },
+    (error) => {
+      console.error("Error listening to service requests for user:", error);
+      callback([]);
+    }
+  );
+
+  return unsubscribe;
+};
+
+
+export const getActiveUserRequest = async (userId: string): Promise<ServiceRequest | null> => {
+  if (!db) return null;
+  const q = query(
+    collection(db, REQUESTS_COLLECTION),
+    where('userId', '==', userId),
+    where('status', 'in', ['Pending', 'Accepted', 'In Progress']),
+    orderBy('requestTime', 'desc'),
+    limit(1)
+  );
+  const querySnapshot = await getDocs(q);
+  if (!querySnapshot.empty) {
+    return requestFromDoc(querySnapshot.docs[0]);
+  }
+  return null;
+};
+
+export const listenToActiveUserRequest = (
+  userId: string,
+  callback: (request: ServiceRequest | null) => void
+): (() => void) => {
+  if (!db) {
+    console.error("Firestore not initialized. Cannot listen to active user request.");
+    callback(null);
+    return () => {};
+  }
+
+  const q = query(
+    collection(db, REQUESTS_COLLECTION),
+    where('userId', '==', userId),
+    where('status', 'in', ['Pending', 'Accepted', 'In Progress']),
+    orderBy('requestTime', 'desc'),
+    limit(1)
+  );
+
+  const unsubscribe = onSnapshot(
+    q,
+    (querySnapshot) => {
+      if (!querySnapshot.empty) {
+        callback(requestFromDoc(querySnapshot.docs[0]));
+      } else {
+        callback(null);
+      }
+    },
+    (error) => {
+      console.error("Error listening to active user request:", error);
+      callback(null);
+    }
+  );
   return unsubscribe;
 };
