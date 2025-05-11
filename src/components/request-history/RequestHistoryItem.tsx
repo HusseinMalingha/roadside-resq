@@ -31,7 +31,7 @@ const RequestHistoryItem: FC<RequestHistoryItemProps> = ({ request }) => {
   return (
     <AccordionItem value={request.id} className="border-b-0">
       <Card className="shadow-md hover:shadow-lg transition-shadow duration-200 w-full">
-        <AccordionTrigger className="w-full p-0 hover:no-underline">
+        <AccordionTrigger className="w-full p-0 hover:no-underline" hideIcon={true}>
           <CardHeader className="w-full pb-3 cursor-pointer">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 w-full">
               <div className="flex-grow text-left">
@@ -43,8 +43,6 @@ const RequestHistoryItem: FC<RequestHistoryItemProps> = ({ request }) => {
                   <StatusIcon className="mr-1.5 h-3.5 w-3.5" />
                   {currentStatus.label}
                 </Badge>
-                {/* Chevron will be automatically added by AccordionTrigger, but if we want custom one: */}
-                {/* <ChevronDown className="h-4 w-4 shrink-0 transition-transform duration-200 text-muted-foreground group-data-[state=open]:rotate-180" /> */}
               </div>
             </div>
           </CardHeader>
