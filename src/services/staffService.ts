@@ -1,98 +1,116 @@
 
+import { db, collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, query, where, Timestamp, limit, writeBatch } from '@/lib/firebase';
 import type { StaffMember, StaffRole } from '@/types';
 
-const LOCAL_STORAGE_STAFF_KEY = 'resqStaffMembers';
+const STAFF_COLLECTION = 'staffMembers';
 
-// Mock initial staff for demo purposes if localStorage is empty
-const INITIAL_MOCK_STAFF: StaffMember[] = [
-    { id: 'staff-mech-1', name: 'John Doe (Mechanic)', email: 'mechanic1@example.com', role: 'mechanic' },
-    { id: 'staff-cr-1', name: 'Jane Smith (Customer Relations)', email: 'cr1@example.com', role: 'customer_relations' },
+const INITIAL_MOCK_STAFF: Omit<StaffMember, 'id'>[] = [
+    { name: 'John Doe (Mechanic)', email: 'mechanic1@example.com', role: 'mechanic' },
+    { name: 'Jane Smith (Customer Relations)', email: 'cr1@example.com', role: 'customer_relations' },
+    // Add the admin user here if they should also be in the staffMembers collection for role lookup
+    // { name: 'Admin User', email: 'husseinmalingha@gmail.com', role: 'admin' }, 
 ];
 
-
-const getAllLocalStaff = (): StaffMember[] => {
-  if (typeof window === 'undefined') return [...INITIAL_MOCK_STAFF];
-  const staffJson = localStorage.getItem(LOCAL_STORAGE_STAFF_KEY);
-   if (staffJson) {
-    return JSON.parse(staffJson);
+// Function to seed initial staff data if collection is empty
+const seedInitialStaff = async () => {
+  if (!db) {
+    console.error("Firestore not initialized, skipping staff seeding.");
+    return;
   }
-  // If nothing in local storage, seed with initial mock staff
-  localStorage.setItem(LOCAL_STORAGE_STAFF_KEY, JSON.stringify(INITIAL_MOCK_STAFF));
-  return [...INITIAL_MOCK_STAFF];
+  const staffCollectionRef = collection(db, STAFF_COLLECTION);
+  const q = query(staffCollectionRef, limit(1));
+  const snapshot = await getDocs(q);
+
+  if (snapshot.empty) {
+    console.log("Staff collection is empty. Seeding initial staff...");
+    const batch = writeBatch(db);
+    INITIAL_MOCK_STAFF.forEach(staffMemberData => {
+      const docRef = doc(collection(db, STAFF_COLLECTION)); // Auto-generate ID
+      batch.set(docRef, { ...staffMemberData, email: staffMemberData.email.toLowerCase() });
+    });
+    await batch.commit();
+    console.log("Initial staff seeded successfully.");
+  }
 };
 
-const saveAllLocalStaff = (staff: StaffMember[]): void => {
-  if (typeof window === 'undefined') return;
-  localStorage.setItem(LOCAL_STORAGE_STAFF_KEY, JSON.stringify(staff));
+// Call seeding when the module loads (or on first relevant function call)
+if (typeof window !== 'undefined') { // Ensure this runs client-side
+    seedInitialStaff().catch(console.error);
+}
+
+
+const staffFromDoc = (doc: DocumentSnapshot): StaffMember => {
+  const data = doc.data();
+  return {
+    id: doc.id,
+    name: data?.name,
+    email: data?.email,
+    role: data?.role,
+  } as StaffMember;
 };
 
 export const getStaffMemberById = async (staffId: string): Promise<StaffMember | null> => {
-  const allStaff = getAllLocalStaff();
-  return Promise.resolve(allStaff.find(s => s.id === staffId) || null);
+  if (!db) return null;
+  const docRef = doc(db, STAFF_COLLECTION, staffId);
+  const docSnap = await getDoc(docRef);
+  return docSnap.exists() ? staffFromDoc(docSnap) : null;
 };
 
-// This function is less meaningful with localStorage but kept for interface compatibility.
-// It won't reflect a central database of staff.
 export const getStaffMemberByEmail = async (email: string): Promise<StaffMember | null> => {
-  const allStaff = getAllLocalStaff();
-  return Promise.resolve(allStaff.find(s => s.email.toLowerCase() === email.toLowerCase()) || null);
+  if (!db) return null;
+  const q = query(collection(db, STAFF_COLLECTION), where("email", "==", email.toLowerCase()), limit(1));
+  const querySnapshot = await getDocs(q);
+  if (!querySnapshot.empty) {
+    return staffFromDoc(querySnapshot.docs[0]);
+  }
+  return null;
 };
 
 export const getAllStaffMembers = async (): Promise<StaffMember[]> => {
-  return Promise.resolve(getAllLocalStaff());
+  if (!db) return [];
+  const querySnapshot = await getDocs(collection(db, STAFF_COLLECTION));
+  return querySnapshot.docs.map(staffFromDoc);
 };
 
 export const addStaffMember = async (staffData: Omit<StaffMember, 'id'>): Promise<StaffMember> => {
-  const allStaff = getAllLocalStaff();
-  const newStaff: StaffMember = {
+  if (!db) throw new Error("Firestore not initialized");
+  const dataToAdd = {
     ...staffData,
-    id: `local-staff-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-    email: staffData.email.toLowerCase(),
+    email: staffData.email.toLowerCase(), // Ensure email is stored in lowercase
   };
-  allStaff.push(newStaff);
-  saveAllLocalStaff(allStaff);
-  return Promise.resolve(newStaff);
+  const docRef = await addDoc(collection(db, STAFF_COLLECTION), dataToAdd);
+  return { ...dataToAdd, id: docRef.id };
 };
 
-export const updateStaffMember = async (staffId: string, staffData: Partial<StaffMember>): Promise<void> => {
-  let allStaff = getAllLocalStaff();
-  const staffIndex = allStaff.findIndex(s => s.id === staffId);
-  if (staffIndex !== -1) {
-    const updatedStaffMember = { ...allStaff[staffIndex], ...staffData, id: staffId };
-    if (updatedStaffMember.email) {
-      updatedStaffMember.email = updatedStaffMember.email.toLowerCase();
-    }
-    allStaff[staffIndex] = updatedStaffMember;
-    saveAllLocalStaff(allStaff);
-  } else {
-     console.warn(`Staff member with ID ${staffId} not found in localStorage for update.`);
+export const updateStaffMember = async (staffId: string, staffData: Partial<Omit<StaffMember, 'id'>>): Promise<void> => {
+  if (!db) throw new Error("Firestore not initialized");
+  const docRef = doc(db, STAFF_COLLECTION, staffId);
+  const dataToUpdate = { ...staffData };
+  if (dataToUpdate.email) {
+    dataToUpdate.email = dataToUpdate.email.toLowerCase();
   }
-  return Promise.resolve();
+  await updateDoc(docRef, dataToUpdate);
 };
 
 export const deleteStaffMember = async (staffId: string): Promise<void> => {
-  let allStaff = getAllLocalStaff();
-  allStaff = allStaff.filter(s => s.id !== staffId);
-  saveAllLocalStaff(allStaff);
-  return Promise.resolve();
+  if (!db) throw new Error("Firestore not initialized");
+  const docRef = doc(db, STAFF_COLLECTION, staffId);
+  await deleteDoc(docRef);
 };
 
 export const listenToStaffMembers = (callback: (staff: StaffMember[]) => void): (() => void) => {
-  const currentStaff = getAllLocalStaff();
-  callback(currentStaff);
-
-  const storageListener = (event: StorageEvent) => {
-    if (event.key === LOCAL_STORAGE_STAFF_KEY) {
-      callback(getAllLocalStaff());
-    }
-  };
-
-  if (typeof window !== 'undefined') {
-    window.addEventListener('storage', storageListener);
+  if (!db) {
+    console.error("Firestore not initialized. Cannot listen to staff members.");
+    callback([]); // Call with empty array if DB is not available
+    return () => {}; // Return a no-op unsubscribe function
   }
-  return () => {
-    if (typeof window !== 'undefined') {
-      window.removeEventListener('storage', storageListener);
-    }
-  };
+  const q = query(collection(db, STAFF_COLLECTION));
+  const unsubscribe = onSnapshot(q, (querySnapshot) => {
+    const staffList = querySnapshot.docs.map(staffFromDoc);
+    callback(staffList);
+  }, (error) => {
+    console.error("Error listening to staff members:", error);
+    callback([]); // Call with empty array on error
+  });
+  return unsubscribe;
 };

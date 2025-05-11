@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import { getUserRequests } from '@/services/requestService'; // Uses localStorage based service
+import { getUserRequests } from '@/services/requestService'; 
 import type { ServiceRequest } from '@/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -14,7 +14,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import RequestHistoryItem from '@/components/request-history/RequestHistoryItem';
 
 export default function MyRequestsPage() {
-  const { user, loading: authLoading, isFirebaseReady } = useAuth(); // isFirebaseReady for Auth
+  const { user, loading: authLoading, isFirebaseReady } = useAuth();
   const router = useRouter();
   const [userRequests, setUserRequests] = useState<ServiceRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -25,17 +25,18 @@ export default function MyRequestsPage() {
         router.push('/login?redirect=/my-requests');
       } else if (user && isFirebaseReady) { 
         setIsLoading(true); 
-        getUserRequests(user.uid) // Fetches from localStorage
+        getUserRequests(user.uid) 
           .then((requests) => {
-            setUserRequests(requests.map(r => ({...r, requestTime: new Date(r.requestTime)}))); // Ensure date is Date object
+            setUserRequests(requests.map(r => ({...r, requestTime: new Date(r.requestTime as Date)}))); // Ensure date is Date object
           })
           .catch(error => {
-            console.error("Failed to fetch user requests from localStorage:", error);
+            console.error("Failed to fetch user requests from Firestore:", error);
+            // Optionally show a toast to the user
           })
           .finally(() => {
             setIsLoading(false); 
           });
-      } else if (!isFirebaseReady) { // Auth service not ready
+      } else if (!isFirebaseReady) { // Auth/DB service not ready
         setIsLoading(false);
       }
     }
@@ -57,7 +58,7 @@ export default function MyRequestsPage() {
                 <CardHeader>
                     <AlertCircle className="h-16 w-16 text-destructive mx-auto mb-4" />
                     <CardTitle>Service Unavailable</CardTitle>
-                    <CardDescription>Cannot connect to authentication services. Please try again later.</CardDescription>
+                    <CardDescription>Cannot connect to services. Please try again later.</CardDescription>
                 </CardHeader>
                  <CardFooter>
                     <Button onClick={() => window.location.reload()} className="w-full">

@@ -1,105 +1,114 @@
 
+import { db, collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, query, where, orderBy, Timestamp, type DocumentSnapshot } from '@/lib/firebase';
 import type { ServiceRequest, Location, VehicleInfo, ServiceProvider } from '@/types';
 
-const LOCAL_STORAGE_REQUESTS_KEY = 'resqServiceRequests';
+const REQUESTS_COLLECTION = 'serviceRequests';
 
-// Helper to get all requests from local storage
-const getAllLocalRequests = (): ServiceRequest[] => {
-  if (typeof window === 'undefined') return [];
-  const requestsJson = localStorage.getItem(LOCAL_STORAGE_REQUESTS_KEY);
-  return requestsJson ? JSON.parse(requestsJson) : [];
+const requestFromDoc = (docSnap: DocumentSnapshot): ServiceRequest => {
+  const data = docSnap.data();
+  if (!data) throw new Error("Document data is undefined!");
+
+  // Convert Firestore Timestamps to JS Date objects
+  const requestTime = data.requestTime instanceof Timestamp ? data.requestTime.toDate() : new Date(data.requestTime);
+  
+  return {
+    id: docSnap.id,
+    requestId: data.requestId,
+    userId: data.userId,
+    userLocation: data.userLocation,
+    issueDescription: data.issueDescription,
+    issueSummary: data.issueSummary,
+    selectedProvider: data.selectedProvider, // Assumes ServiceProvider is stored directly
+    selectedProviderId: data.selectedProviderId,
+    requestTime: requestTime,
+    status: data.status,
+    userName: data.userName,
+    userPhone: data.userPhone,
+    vehicleInfo: data.vehicleInfo,
+    assignedStaffId: data.assignedStaffId,
+    mechanicNotes: data.mechanicNotes,
+    resourcesUsed: data.resourcesUsed,
+  } as ServiceRequest;
 };
 
-// Helper to save all requests to local storage
-const saveAllLocalRequests = (requests: ServiceRequest[]): void => {
-  if (typeof window === 'undefined') return;
-  localStorage.setItem(LOCAL_STORAGE_REQUESTS_KEY, JSON.stringify(requests));
-};
 
 export const getAllRequests = async (): Promise<ServiceRequest[]> => {
-  // Simulates async behavior, though localStorage is synchronous
-  return Promise.resolve(getAllLocalRequests().sort((a,b) => new Date(b.requestTime).getTime() - new Date(a.requestTime).getTime()));
+  if (!db) return [];
+  const q = query(collection(db, REQUESTS_COLLECTION), orderBy('requestTime', 'desc'));
+  const querySnapshot = await getDocs(q);
+  return querySnapshot.docs.map(requestFromDoc);
 };
 
 export const getUserRequests = async (userId: string): Promise<ServiceRequest[]> => {
-  const allRequests = getAllLocalRequests();
-  return Promise.resolve(
-    allRequests
-      .filter(req => req.userId === userId)
-      .sort((a,b) => new Date(b.requestTime).getTime() - new Date(a.requestTime).getTime())
+  if (!db) return [];
+  const q = query(
+    collection(db, REQUESTS_COLLECTION),
+    where('userId', '==', userId),
+    orderBy('requestTime', 'desc')
   );
+  const querySnapshot = await getDocs(q);
+  return querySnapshot.docs.map(requestFromDoc);
 };
 
 export const addServiceRequest = async (requestData: Omit<ServiceRequest, 'id' | 'requestTime'> & { requestTime: Date }): Promise<ServiceRequest> => {
-  const allRequests = getAllLocalRequests();
-  const newRequest: ServiceRequest = {
+  if (!db) throw new Error("Firestore not initialized");
+  
+  const dataToSave = {
     ...requestData,
-    id: `local-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`, // Generate a local ID
-    requestTime: new Date(requestData.requestTime), // Ensure it's a Date object
+    requestTime: Timestamp.fromDate(new Date(requestData.requestTime)), // Convert JS Date to Firestore Timestamp
+    selectedProviderId: requestData.selectedProvider.id, // Store ID for querying if needed
   };
-  allRequests.push(newRequest);
-  saveAllLocalRequests(allRequests);
-  return Promise.resolve(newRequest);
+
+  const docRef = await addDoc(collection(db, REQUESTS_COLLECTION), dataToSave);
+  return { ...requestData, id: docRef.id, requestTime: new Date(requestData.requestTime) }; // Return with JS Date
 };
 
 export const updateServiceRequest = async (requestId: string, requestData: Partial<Omit<ServiceRequest, 'id' | 'requestTime'>>): Promise<void> => {
-  let allRequests = getAllLocalRequests();
-  const requestIndex = allRequests.findIndex(req => req.id === requestId);
-  if (requestIndex !== -1) {
-    allRequests[requestIndex] = { ...allRequests[requestIndex], ...requestData };
-    saveAllLocalRequests(allRequests);
-  } else {
-    console.warn(`Request with ID ${requestId} not found in localStorage for update.`);
+  if (!db) throw new Error("Firestore not initialized");
+  const docRef = doc(db, REQUESTS_COLLECTION, requestId);
+  
+  const dataToUpdate: Partial<any> = { ...requestData };
+  // Convert any Date fields to Timestamps if they exist in requestData
+  if (requestData.requestTime && requestData.requestTime instanceof Date) {
+    dataToUpdate.requestTime = Timestamp.fromDate(requestData.requestTime);
   }
-  return Promise.resolve();
+
+  await updateDoc(docRef, dataToUpdate);
 };
 
-// Real-time listeners are not feasible with localStorage in the same way as Firestore.
-// These functions are now stubs or will trigger a manual re-fetch if components need to update.
-// For a true reactive system with localStorage, custom event emitters or a state management library would be needed.
-
 export const listenToRequests = (callback: (requests: ServiceRequest[]) => void): (() => void) => {
-  // This will just provide the current snapshot. No real-time updates.
-  const currentRequests = getAllLocalRequests().sort((a,b) => new Date(b.requestTime).getTime() - new Date(a.requestTime).getTime());
-  callback(currentRequests);
-  
-  // To somewhat simulate, you could listen to storage events, but it's limited.
-  const storageListener = (event: StorageEvent) => {
-    if (event.key === LOCAL_STORAGE_REQUESTS_KEY) {
-      const updatedRequests = getAllLocalRequests().sort((a,b) => new Date(b.requestTime).getTime() - new Date(a.requestTime).getTime());
-      callback(updatedRequests);
-    }
-  };
-  if (typeof window !== 'undefined') {
-    window.addEventListener('storage', storageListener);
+  if (!db) {
+    console.error("Firestore not initialized. Cannot listen to requests.");
+    callback([]);
+    return () => {};
   }
-
-  return () => {
-    if (typeof window !== 'undefined') {
-      window.removeEventListener('storage', storageListener);
-    }
-  };
+  const q = query(collection(db, REQUESTS_COLLECTION), orderBy('requestTime', 'desc'));
+  const unsubscribe = onSnapshot(q, (querySnapshot) => {
+    const requestsList = querySnapshot.docs.map(requestFromDoc);
+    callback(requestsList);
+  }, (error) => {
+    console.error("Error listening to service requests:", error);
+    callback([]);
+  });
+  return unsubscribe;
 };
 
 export const listenToRequestById = (requestId: string, callback: (request: ServiceRequest | null) => void): (() => void) => {
-  const allRequests = getAllLocalRequests();
-  const request = allRequests.find(req => req.id === requestId) || null;
-  callback(request);
-
-  const storageListener = (event: StorageEvent) => {
-    if (event.key === LOCAL_STORAGE_REQUESTS_KEY) {
-      const updatedRequests = getAllLocalRequests();
-      const updatedRequest = updatedRequests.find(req => req.id === requestId) || null;
-      callback(updatedRequest);
-    }
-  };
-    if (typeof window !== 'undefined') {
-    window.addEventListener('storage', storageListener);
+  if (!db) {
+    console.error("Firestore not initialized. Cannot listen to request by ID.");
+    callback(null);
+    return () => {};
   }
-
-  return () => {
-    if (typeof window !== 'undefined') {
-      window.removeEventListener('storage', storageListener);
+  const docRef = doc(db, REQUESTS_COLLECTION, requestId);
+  const unsubscribe = onSnapshot(docRef, (docSnap) => {
+    if (docSnap.exists()) {
+      callback(requestFromDoc(docSnap));
+    } else {
+      callback(null);
     }
-  };
+  }, (error) => {
+    console.error(`Error listening to service request ${requestId}:`, error);
+    callback(null);
+  });
+  return unsubscribe;
 };

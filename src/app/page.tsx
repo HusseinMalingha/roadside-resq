@@ -18,40 +18,9 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { addServiceRequest, listenToRequestById } from '@/services/requestService'; 
 import { getDraftRequest, saveDraftRequest, deleteDraftRequest } from '@/services/draftRequestService'; 
+import { getAllGarages } from '@/services/garageService'; // To fetch providers
 
 type AppStep = 'initial' | 'details' | 'providers' | 'tracking' | 'completed';
-
-// Static provider list as Firestore is removed
-const STATIC_PROVIDERS: ServiceProvider[] = [
-  { 
-    id: 'ax-kampala-central', 
-    name: 'Auto Xpress - Kampala Central', 
-    phone: '(256) 772-123456', 
-    etaMinutes: 15, 
-    currentLocation: { lat: 0.3136, lng: 32.5811 }, 
-    generalLocation: "Kampala Central (City Oil Kira Rd)",
-    servicesOffered: ['Tire Services', 'Battery Replacement', 'Oil Change', 'Brake Services', 'Flat tire', 'Dead battery', 'Vehicle Diagnostics'] 
-  },
-  { 
-    id: 'ax-lugogo', 
-    name: 'Auto Xpress - Lugogo', 
-    phone: '(256) 772-234567', 
-    etaMinutes: 20, 
-    currentLocation: { lat: 0.3270, lng: 32.5990 }, 
-    generalLocation: "Lugogo (U-Save, Next to Forest Mall)",
-    servicesOffered: ['Suspension Work', 'Diagnostics', 'Tire Alignment', 'Jump Start', 'Engine failure', 'Car Wash'] 
-  },
-   {
-    id: 'ax-entebbe',
-    name: 'Auto Xpress - Entebbe',
-    phone: '(256) 772-345678',
-    etaMinutes: 45,
-    currentLocation: { lat: 0.0476, lng: 32.4606 },
-    generalLocation: "Entebbe Town (Shell Petrol Station)",
-    servicesOffered: ['Tire Services', 'Battery Check', 'Oil Top-up', 'Flat tire']
-  },
-];
-
 
 export default function RoadsideRescuePage() {
   const { user, role, loading: authLoading, isFirebaseReady } = useAuth();
@@ -74,12 +43,33 @@ export default function RoadsideRescuePage() {
   const [isIssueConfirmed, setIsIssueConfirmed] = useState(false);
   const [isVehicleInfoConfirmed, setIsVehicleInfoConfirmed] = useState(false);
   const [isLoadingDraft, setIsLoadingDraft] = useState(true);
+  const [availableProviders, setAvailableProviders] = useState<ServiceProvider[]>([]);
+  const [isLoadingProviders, setIsLoadingProviders] = useState(false);
 
 
   const { toast } = useToast();
 
+  // Fetch providers when app initializes or firebase becomes ready
+  useEffect(() => {
+    const fetchProviders = async () => {
+      if (isFirebaseReady) {
+        setIsLoadingProviders(true);
+        try {
+          const providers = await getAllGarages();
+          setAvailableProviders(providers);
+        } catch (error) {
+          console.error("Failed to fetch service providers:", error);
+          toast({ title: "Error", description: "Could not load service providers.", variant: "destructive" });
+        } finally {
+          setIsLoadingProviders(false);
+        }
+      }
+    };
+    fetchProviders();
+  }, [isFirebaseReady, toast]);
+
   const persistDraft = useCallback(async () => {
-    if (user && currentStep === 'details') { 
+    if (user && currentStep === 'details' && isFirebaseReady) { 
       const draftData: Partial<Omit<DraftServiceRequestData, 'userId' | 'lastUpdated'>> = {
         userLocation: userLocation,
         issueDescription: issueDescription,
@@ -89,20 +79,20 @@ export default function RoadsideRescuePage() {
       try {
         await saveDraftRequest(user.uid, draftData);
       } catch (error) {
-        console.warn("Failed to save draft:", error);
+        console.warn("Failed to save draft to Firestore:", error);
       }
     }
-  }, [user, userLocation, issueDescription, confirmedIssueSummary, vehicleInfo, currentStep]);
+  }, [user, userLocation, issueDescription, confirmedIssueSummary, vehicleInfo, currentStep, isFirebaseReady]);
 
   useEffect(() => {
-    if (user && currentStep === 'details' && !isLoadingDraft) {
+    if (user && currentStep === 'details' && !isLoadingDraft && isFirebaseReady) {
       persistDraft();
     }
-  }, [userLocation, issueDescription, confirmedIssueSummary, vehicleInfo, user, currentStep, persistDraft, isLoadingDraft]);
+  }, [userLocation, issueDescription, confirmedIssueSummary, vehicleInfo, user, currentStep, persistDraft, isLoadingDraft, isFirebaseReady]);
 
   useEffect(() => {
     const loadDraft = async () => {
-      if (user && currentStep === 'details') {
+      if (user && currentStep === 'details' && isFirebaseReady) {
         setIsLoadingDraft(true);
         try {
           const draft = await getDraftRequest(user.uid);
@@ -123,11 +113,13 @@ export default function RoadsideRescuePage() {
             toast({ title: "Draft Loaded", description: "Your previous in-progress request has been loaded.", duration: 3000});
           }
         } catch (error) {
-          console.error("Error loading draft:", error);
+          console.error("Error loading draft from Firestore:", error);
           toast({ title: "Draft Load Failed", description: "Could not load your saved draft.", variant: "destructive"});
         } finally {
           setIsLoadingDraft(false);
         }
+      } else if (!isFirebaseReady && currentStep === 'details') {
+         setIsLoadingDraft(false); // Not ready, don't attempt load
       } else {
         setIsLoadingDraft(false);
       }
@@ -137,7 +129,7 @@ export default function RoadsideRescuePage() {
         loadDraft();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, currentStep]); 
+  }, [user, currentStep, isFirebaseReady]); 
 
   const handleLocationAcquired = useCallback((location: Location) => {
     setUserLocation(location);
@@ -190,7 +182,7 @@ export default function RoadsideRescuePage() {
     setProviderCurrentLocation(provider.currentLocation);
     setHasProviderArrivedSimulation(false); 
     
-    if (userLocation && user && vehicleInfo) { 
+    if (userLocation && user && vehicleInfo && isFirebaseReady) { 
       const newRequestData: Omit<ServiceRequestType, 'id' | 'requestTime'> & { requestTime: Date } = {
         requestId: `RR-${Math.random().toString(36).substring(2, 7).toUpperCase()}`,
         userId: user.uid, 
@@ -198,7 +190,8 @@ export default function RoadsideRescuePage() {
         issueDescription: issueDescription,
         issueSummary: confirmedIssueSummary,
         vehicleInfo: vehicleInfo, 
-        selectedProvider: provider,
+        selectedProvider: provider, // Embed provider details
+        selectedProviderId: provider.id, // Store provider ID
         requestTime: new Date(), 
         status: 'Pending', 
         userName: user.displayName || user.email || "N/A",
@@ -207,7 +200,7 @@ export default function RoadsideRescuePage() {
       
       try {
         const createdRequest = await addServiceRequest(newRequestData); 
-        setServiceRequest(createdRequest); 
+        setServiceRequest({ ...createdRequest, requestTime: new Date(createdRequest.requestTime as Date) }); 
         setServiceRequestId(createdRequest.id); 
         if (user) await deleteDraftRequest(user.uid); 
         setCurrentStep('tracking');
@@ -225,16 +218,16 @@ export default function RoadsideRescuePage() {
       }
     } else {
        toast({
-        title: "Missing Information",
-        description: "Cannot create request. User, location or vehicle info is missing.",
+        title: "Missing Information or Service Unavailable",
+        description: "Cannot create request. User, location, vehicle info is missing, or service is not ready.",
         variant: "destructive",
       });
     }
   };
 
-  const resetApp = () => {
-    if (user) {
-        deleteDraftRequest(user.uid).catch(err => console.warn("Failed to clear draft on reset", err));
+  const resetApp = async () => {
+    if (user && isFirebaseReady) {
+        await deleteDraftRequest(user.uid).catch(err => console.warn("Failed to clear draft on reset", err));
     }
     setCurrentStep('initial');
     setUserLocation(null);
@@ -256,7 +249,7 @@ export default function RoadsideRescuePage() {
     if (!isFirebaseReady) { 
       toast({
         title: "Service Unavailable",
-        description: "Authentication service is not ready. Please try again later.",
+        description: "Services are not ready. Please try again later.",
         variant: "destructive",
       });
       return;
@@ -279,27 +272,28 @@ export default function RoadsideRescuePage() {
 
 
   useEffect(() => {
-    if (!serviceRequestId || currentStep !== 'tracking') {
+    if (!serviceRequestId || currentStep !== 'tracking' || !isFirebaseReady) {
       return; 
     }
 
     const unsubscribe = listenToRequestById(serviceRequestId, (updatedRequest) => {
       if (updatedRequest) {
-        if (serviceRequest?.status !== updatedRequest.status) {
+        const newServiceRequest = { ...updatedRequest, requestTime: new Date(updatedRequest.requestTime as Date) };
+        if (serviceRequest?.status !== newServiceRequest.status) {
            toast({
             title: "Request Status Updated",
-            description: `Your request status is now: ${updatedRequest.status}`,
+            description: `Your request status is now: ${newServiceRequest.status}`,
           });
         }
-        setServiceRequest(updatedRequest);
+        setServiceRequest(newServiceRequest);
         
-        if (updatedRequest.selectedProvider) {
-            setSelectedProvider(updatedRequest.selectedProvider);
-            setProviderETA(updatedRequest.selectedProvider.etaMinutes); 
-            setProviderCurrentLocation(updatedRequest.selectedProvider.currentLocation); 
+        if (newServiceRequest.selectedProvider) {
+            setSelectedProvider(newServiceRequest.selectedProvider);
+            setProviderETA(newServiceRequest.selectedProvider.etaMinutes); 
+            setProviderCurrentLocation(newServiceRequest.selectedProvider.currentLocation); 
         }
 
-        if (updatedRequest.status === 'Completed' || updatedRequest.status === 'Cancelled') {
+        if (newServiceRequest.status === 'Completed' || newServiceRequest.status === 'Cancelled') {
           setCurrentStep('completed');
         }
       } else {
@@ -308,7 +302,7 @@ export default function RoadsideRescuePage() {
     });
 
     return () => unsubscribe(); 
-  }, [serviceRequestId, toast, currentStep, serviceRequest?.status]);
+  }, [serviceRequestId, toast, currentStep, serviceRequest?.status, isFirebaseReady]);
 
   useEffect(() => {
     let trackingInterval: NodeJS.Timeout | null = null;
@@ -358,7 +352,7 @@ export default function RoadsideRescuePage() {
   const isStaffUser = user && (role === 'admin' || role === 'mechanic' || role === 'customer_relations');
 
   const renderStepContent = () => {
-    if (authLoading && currentStep === 'initial') {
+    if ((authLoading || isLoadingProviders) && currentStep === 'initial') {
       return (
         <div className="flex flex-col items-center justify-center flex-grow w-full py-8">
           <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -393,7 +387,7 @@ export default function RoadsideRescuePage() {
                {!isFirebaseReady && !authLoading && ( 
                 <Alert variant="destructive" className="mb-4">
                   <AlertCircleIcon className="h-4 w-4" />
-                  <AlertTitle>Authentication Service Unavailable</AlertTitle>
+                  <AlertTitle>Services Unavailable</AlertTitle>
                   <AlertDescription>
                     Cannot proceed. Please try again later.
                   </AlertDescription>
@@ -412,9 +406,9 @@ export default function RoadsideRescuePage() {
                   size="lg" 
                   className="w-full text-lg py-7 bg-accent hover:bg-accent/90 text-accent-foreground" 
                   onClick={handleInitialAction}
-                  disabled={authLoading || !isFirebaseReady} 
+                  disabled={authLoading || !isFirebaseReady || isLoadingProviders} 
                 >
-                  {authLoading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : 
+                  {authLoading || isLoadingProviders ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : 
                     !user ? <><LogIn className="mr-2 h-5 w-5" /> Login to Request</> : 
                     "Request Assistance Now"
                   }
@@ -438,9 +432,9 @@ export default function RoadsideRescuePage() {
              return (
                 <Alert variant="destructive" className="w-full max-w-md">
                     <AlertCircleIcon className="h-4 w-4" />
-                    <AlertTitle>Auth Service Unavailable</AlertTitle>
-                    <AlertDescription>Cannot load details form as authentication service is not ready.</AlertDescription>
-                     <Button onClick={resetApp} className="mt-4">Go Back</Button>
+                    <AlertTitle>Services Unavailable</AlertTitle>
+                    <AlertDescription>Cannot load details form as services are not ready.</AlertDescription>
+                     <Button onClick={() => resetApp()} className="mt-4">Go Back</Button>
                 </Alert>
             );
         }
@@ -484,19 +478,19 @@ export default function RoadsideRescuePage() {
             <div className="space-y-3 pt-4">
               <Button 
                 onClick={handleProceedToProviders} 
-                disabled={!allDetailsProvided} 
+                disabled={!allDetailsProvided || isLoadingProviders} 
                 className="w-full bg-primary hover:bg-primary/90 text-primary-foreground text-lg py-7" 
                 size="lg"
               >
-                <Send className="mr-2 h-5 w-5" />
-                Find Service Providers
+                {isLoadingProviders ? <Loader2 className="mr-2 h-5 w-5 animate-spin"/> : <Send className="mr-2 h-5 w-5" />}
+                {isLoadingProviders ? "Loading Providers..." : "Find Service Providers"}
               </Button>
               {!allDetailsProvided && (
                 <p className="text-xs text-destructive text-center">
                   Please confirm location, issue, and vehicle details to proceed.
                 </p>
               )}
-               <Button variant="outline" onClick={resetApp} className="w-full">
+               <Button variant="outline" onClick={() => resetApp()} className="w-full">
                 <ArrowLeft className="mr-2 h-4 w-4" /> Start Over
               </Button>
             </div>
@@ -513,7 +507,8 @@ export default function RoadsideRescuePage() {
               userLocation={userLocation}
               issueType={confirmedIssueSummary}
               onSelectProvider={handleSelectProvider}
-              staticProviders={STATIC_PROVIDERS} 
+              staticProviders={availableProviders} // Pass fetched providers
+              isLoading={isLoadingProviders}
             />
           </div>
         );
@@ -581,7 +576,7 @@ export default function RoadsideRescuePage() {
                 </div>
               </CardContent>
             </Card>
-             <Button variant="outline" onClick={resetApp} className="w-full mt-4">
+             <Button variant="outline" onClick={() => resetApp()} className="w-full mt-4">
                 <Home className="mr-2 h-4 w-4" /> Start New Request
             </Button>
           </div>
@@ -618,7 +613,7 @@ export default function RoadsideRescuePage() {
               </Alert>
             </CardContent>
             <CardFooter className="flex-col gap-3">
-              <Button size="lg" className="w-full text-lg py-7" onClick={resetApp}>
+              <Button size="lg" className="w-full text-lg py-7" onClick={() => resetApp()}>
                 <Home className="mr-2 h-5 w-5" /> Back to Home
               </Button>
             </CardFooter>
@@ -635,4 +630,3 @@ export default function RoadsideRescuePage() {
     </div>
   );
 }
-

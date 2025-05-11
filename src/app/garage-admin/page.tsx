@@ -24,7 +24,7 @@ import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
 import AssignStaffDialog from '@/components/garage/AssignStaffDialog';
 
-// Import localStorage based services
+// Import Firestore based services
 import { listenToRequests, updateServiceRequest, getAllRequests } from '@/services/requestService';
 import { listenToStaffMembers, getAllStaffMembers } from '@/services/staffService'; 
 import { listenToGarages, getAllGarages } from '@/services/garageService'; 
@@ -33,7 +33,7 @@ import { listenToGarages, getAllGarages } from '@/services/garageService';
 const DEFAULT_VEHICLE_INFO: VehicleInfo = { make: 'Unknown', model: 'Unknown', year: 'N/A', licensePlate: 'N/A' };
 
 export default function GarageAdminPage() {
-  const { user, role, loading: authLoading, isFirebaseReady } = useAuth(); // isFirebaseReady for Auth
+  const { user, role, loading: authLoading, isFirebaseReady } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
 
@@ -49,40 +49,41 @@ export default function GarageAdminPage() {
   const [requestToAssign, setRequestToAssign] = useState<ServiceRequest | null>(null);
 
   const loadInitialData = useCallback(async () => {
-    // No direct isFirebaseReady check here for data loading as it's local
+    if (!isFirebaseReady) {
+      setIsLoadingData(false); // Firebase not ready, can't load data
+      return;
+    }
     setIsLoadingData(true);
     try {
-      // Fetching from localStorage based services
-      const initialRequests = await getAllRequests(); 
-      const processedRequests = initialRequests.map(r => ({
+      const initialRequestsData = await getAllRequests(); 
+      const processedRequests = initialRequestsData.map(r => ({
           ...r,
           vehicleInfo: r.vehicleInfo || DEFAULT_VEHICLE_INFO,
-          requestTime: new Date(r.requestTime) // Ensure date object
+          requestTime: new Date(r.requestTime as Date) // Ensure date object
       })).sort((a, b) => (new Date(b.requestTime)).getTime() - (new Date(a.requestTime)).getTime());
       setRequests(processedRequests);
 
-      const initialGarages = await getAllGarages();
-      setGarageProviders(initialGarages);
+      const initialGaragesData = await getAllGarages();
+      setGarageProviders(initialGaragesData);
 
-      // Admin role check simplified, staff data is local
-      if (role === 'admin' ) { // Simplified role check
-        const initialStaff = await getAllStaffMembers(); 
-        setStaffMembers(initialStaff);
+      if (role === 'admin' ) {
+        const initialStaffData = await getAllStaffMembers(); 
+        setStaffMembers(initialStaffData);
       }
 
       if (initialLoadRef.current) {
         toast({
           title: "Data Loaded",
-          description: "Successfully fetched initial records.",
+          description: "Successfully fetched initial records from Firestore.",
           variant: "default",
           duration: 4000,
         });
-        const currentPendingCount = initialRequests.filter(req => req.status === 'Pending').length;
+        const currentPendingCount = initialRequestsData.filter(req => req.status === 'Pending').length;
         prevPendingCountRef.current = currentPendingCount;
         initialLoadRef.current = false; 
       }
     } catch (error) {
-      console.error("Error loading initial data:", error);
+      console.error("Error loading initial data from Firestore:", error);
       toast({ title: "Error Loading Data", description: "Could not fetch initial records.", variant: "destructive" });
       if (initialLoadRef.current) {
         initialLoadRef.current = false; 
@@ -90,15 +91,16 @@ export default function GarageAdminPage() {
     } finally {
       setIsLoadingData(false);
     }
-  }, [role, toast]); 
+  }, [role, toast, isFirebaseReady]); 
 
  useEffect(() => {
     if (!authLoading) { 
-      if (!user && isFirebaseReady) { // Firebase Auth ready and no user
+      if (!user && isFirebaseReady) {
         router.push('/login?redirect=/garage-admin');
       } else if (user && isFirebaseReady && initialLoadRef.current) { 
-        loadInitialData(); // Load data
+        loadInitialData();
       } else if (!isFirebaseReady && initialLoadRef.current) {
+        // Firebase not ready, stop initial loading indicator
         setIsLoadingData(false);
         initialLoadRef.current = false;
       }
@@ -108,12 +110,12 @@ export default function GarageAdminPage() {
 
   // Listener for service requests
   useEffect(() => {
-    if (!user) return; // User check only
+    if (!user || !isFirebaseReady) return; 
     const unsubscribeRequests = listenToRequests((updatedRequests) => { 
       const processedRequests = updatedRequests.map(r => ({
         ...r,
         vehicleInfo: r.vehicleInfo || DEFAULT_VEHICLE_INFO,
-        requestTime: new Date(r.requestTime)
+        requestTime: new Date(r.requestTime as Date)
       })).sort((a, b) => (new Date(b.requestTime)).getTime() - (new Date(a.requestTime)).getTime());
       
       const currentPendingCount = processedRequests.filter(req => req.status === 'Pending').length;
@@ -137,21 +139,21 @@ export default function GarageAdminPage() {
       if (isLoadingData && !initialLoadRef.current) setIsLoadingData(false); 
     });
     return () => unsubscribeRequests(); 
-  }, [user, toast, isLoadingData]); 
+  }, [user, toast, isLoadingData, isFirebaseReady]); 
 
   // Listener for staff members
   useEffect(() => {
-    if (!user || role !== 'admin') return; 
+    if (!user || role !== 'admin' || !isFirebaseReady) return; 
     const unsubscribeStaff = listenToStaffMembers(setStaffMembers);
     return () => unsubscribeStaff();
-  }, [user, role]);
+  }, [user, role, isFirebaseReady]);
 
   // Listener for garage providers
   useEffect(() => {
-    if (!user) return;
+    if (!user || !isFirebaseReady) return;
     const unsubscribeGarages = listenToGarages(setGarageProviders);
     return () => unsubscribeGarages();
-  }, [user]);
+  }, [user, isFirebaseReady]);
 
 
   const handleStatusChange = async (requestId: string, newStatus: ServiceRequest['status'], notes?: string, resources?: string) => {
@@ -159,7 +161,7 @@ export default function GarageAdminPage() {
     const currentRequest = requests.find(req => req.id === requestId);
     if (!currentRequest) return;
 
-    const updateData: Partial<ServiceRequest> = { status: newStatus };
+    const updateData: Partial<Omit<ServiceRequest, 'id' | 'requestTime'>> = { status: newStatus };
     if (notes !== undefined) updateData.mechanicNotes = notes;
     if (resources !== undefined) updateData.resourcesUsed = resources;
 
@@ -175,7 +177,7 @@ export default function GarageAdminPage() {
       if (!requestNeedsAssignment) {
         toast({
           title: "Status Updated",
-          description: `Request ${requestId.slice(0,10)}... status changed to ${newStatus}.`,
+          description: `Request ${currentRequest.requestId.slice(0,10)}... status changed to ${newStatus}.`,
         });
       }
     } catch (error) {
@@ -186,11 +188,11 @@ export default function GarageAdminPage() {
   
   const handleAssignStaff = async (requestId: string, staffId: string | null) => {
     try {
-      await updateServiceRequest(requestId, { assignedStaffId: staffId || undefined }); 
+      await updateServiceRequest(requestId, { assignedStaffId: staffId === null ? undefined : staffId }); 
       const staffName = staffMembers.find(s => s.id === staffId)?.name || 'Unassigned';
       toast({
         title: "Request Assignment Updated",
-        description: `Request ${requestId.slice(0,10)}... assigned to ${staffName}.`,
+        description: `Request ${requests.find(r=>r.id === requestId)?.requestId.slice(0,10)}... assigned to ${staffName}.`,
       });
       setRequestToAssign(null); 
     } catch (error) {
@@ -206,6 +208,7 @@ export default function GarageAdminPage() {
       if (mechanicStaffProfile) {
         filtered = filtered.filter(req => req.assignedStaffId === mechanicStaffProfile.id);
       } else {
+        // If mechanic profile not found (e.g., still loading staff or not a mechanic), show no requests
         filtered = []; 
       }
     }
@@ -259,8 +262,8 @@ export default function GarageAdminPage() {
             <Card className="w-full max-w-md text-center shadow-xl">
                 <CardHeader>
                     <ShieldAlert className="h-16 w-16 text-destructive mx-auto mb-4" />
-                    <CardTitle>Auth Service Unavailable</CardTitle>
-                    <CardDescription>Cannot connect to authentication services. Please try again later.</CardDescription>
+                    <CardTitle>Service Unavailable</CardTitle>
+                    <CardDescription>Cannot connect to services. Please try again later.</CardDescription>
                 </CardHeader>
                  <CardFooter>
                     <Button onClick={() => window.location.reload()} className="w-full">
@@ -272,7 +275,7 @@ export default function GarageAdminPage() {
     );
   }
 
-  if (role !== 'admin' && role !== 'mechanic' && role !== 'customer_relations') { 
+  if (!role || !['admin', 'mechanic', 'customer_relations'].includes(role)) { 
     return (
       <div className="flex-grow flex flex-col items-center justify-center text-center p-6">
         <Card className="w-full max-w-md shadow-xl">
@@ -437,4 +440,3 @@ export default function GarageAdminPage() {
     </div>
   );
 }
-

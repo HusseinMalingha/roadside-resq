@@ -14,21 +14,23 @@ import {
   type ConfirmationResult, 
   onAuthStateChanged,
   type FirebaseAuthType,
-  // db as firestoreInstance // Removed Firestore instance import
+  doc, // Added doc
+  setDoc, // Added setDoc
+  getDoc, // Added getDoc
+  db as firestoreInstance, // Import db correctly
+  Timestamp // Added Timestamp
 } from '@/lib/firebase'; 
-// import { getStaffMemberByEmail } from '@/services/staffService'; // Removed staffService import
+import { getStaffMemberByEmail } from '@/services/staffService';
 import { useRouter } from 'next/navigation';
 import { useToast } from "@/hooks/use-toast";
-
-
-export type UserRole = 'admin' | 'mechanic' | 'customer_relations' | 'user' | null;
+import type { UserRole, UserProfile } from '@/types'; // Ensure UserProfile and UserRole are imported
 
 const ADMIN_EMAIL = 'husseinmalingha@gmail.com';
 const ADMIN_PHONE_NUMBER = '+256759794023';
 
 interface AuthContextType {
   user: User | null;
-  role: UserRole;
+  role: UserRole | null; // Role can be null initially
   loading: boolean;
   isFirebaseReady: boolean;
   signInWithGoogle: () => Promise<void>;
@@ -40,17 +42,40 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Helper function to create/update user profile in Firestore
+const updateUserProfileInFirestore = async (user: User, determinedRole: UserRole) => {
+  if (!firestoreInstance) {
+    console.error("Firestore instance not available, cannot update user profile.");
+    return;
+  }
+  const userProfileRef = doc(firestoreInstance, "users", user.uid);
+  const userProfileData: UserProfile = {
+    uid: user.uid,
+    email: user.email,
+    displayName: user.displayName,
+    photoURL: user.photoURL,
+    phoneNumber: user.phoneNumber,
+    role: determinedRole,
+    // lastLogin: Timestamp.now(), // Example: Track last login
+  };
+  try {
+    await setDoc(userProfileRef, userProfileData, { merge: true }); // merge:true creates or updates
+  } catch (error) {
+    console.error("Error updating user profile in Firestore:", error);
+  }
+};
+
+
 export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [role, setRole] = useState<UserRole>(null);
+  const [role, setRole] = useState<UserRole | null>(null);
   const [loading, setLoading] = useState(true);
   const [isFirebaseReady, setIsFirebaseReady] = useState(false);
   const router = useRouter();
   const { toast } = useToast();
 
   useEffect(() => {
-    // Check only for firebaseAuthInstance as Firestore is removed
-    if (firebaseAuthInstance) {
+    if (firebaseAuthInstance && firestoreInstance) { // Check both auth and db
       setIsFirebaseReady(true);
       const unsubscribe = onAuthStateChanged(firebaseAuthInstance, async (currentUser) => {
         setUser(currentUser);
@@ -63,19 +88,18 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
             (currentUser.phoneNumber && currentUser.phoneNumber === ADMIN_PHONE_NUMBER)
           ) {
             determinedRole = 'admin';
-          } 
-          // Removed Firestore-based staff role lookup
-          // else if (userEmailLower) {
-          //   try {
-          //     // const staffProfile = await getStaffMemberByEmail(userEmailLower);
-          //     // if (staffProfile && (staffProfile.role === 'mechanic' || staffProfile.role === 'customer_relations')) {
-          //     //   determinedRole = staffProfile.role;
-          //     // }
-          //   } catch (error) {
-          //     console.error("Error fetching staff role (local storage simulation):", error);
-          //   }
-          // }
+          } else if (userEmailLower) {
+            try {
+              const staffProfile = await getStaffMemberByEmail(userEmailLower);
+              if (staffProfile && (staffProfile.role === 'mechanic' || staffProfile.role === 'customer_relations')) {
+                determinedRole = staffProfile.role;
+              }
+            } catch (error) {
+              console.error("Error fetching staff role from Firestore:", error);
+            }
+          }
           setRole(determinedRole);
+          await updateUserProfileInFirestore(currentUser, determinedRole); // Update profile
         } else {
           setRole(null);
         }
@@ -87,13 +111,13 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
       setLoading(false); 
       if (typeof window !== 'undefined') {
         toast({
-          title: "Firebase Auth Not Configured",
-          description: "Authentication services are unavailable. Please check environment variables.",
+          title: "Firebase Services Not Configured",
+          description: "Auth or Firestore services are unavailable. Please check environment variables.",
           variant: "destructive",
           duration: 10000,
         });
       }
-      console.warn("AuthContext: Firebase auth instance is not available. Auth features will be disabled.");
+      console.warn("AuthContext: Firebase auth or firestore instance is not available. Features may be disabled.");
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); 
@@ -108,6 +132,7 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
     try {
       const provider = new GoogleAuthProvider();
       await signInWithPopup(firebaseAuthInstance, provider);
+      // Role and profile update will be handled by onAuthStateChanged
       toast({ title: "Sign-In Successful", description: "Signed in with Google." });
     } catch (error: any) {
       console.error("Error signing in with Google:", error);
@@ -204,6 +229,7 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
     setLoading(true);
     try {
       await confirmationResult.confirm(verificationCode);
+      // Role and profile update will be handled by onAuthStateChanged
       toast({ title: "Sign-In Successful", description: "Signed in with phone number." });
     } catch (error: any) {
       console.error("Error verifying OTP:", error);
@@ -255,4 +281,3 @@ export const useAuth = (): AuthContextType => {
   }
   return context;
 };
-

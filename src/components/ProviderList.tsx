@@ -10,37 +10,14 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { SearchX, Loader2, ListFilter, MapPinned } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-// import { getAllGarages } from '@/services/garageService'; // Firestore service removed
 
 interface ProviderListProps {
   userLocation: UserLocationType | null;
   issueType: string;
   onSelectProvider: (provider: ServiceProvider) => void;
-  staticProviders?: ServiceProvider[]; // Accept a static list
+  staticProviders?: ServiceProvider[]; 
+  isLoading?: boolean; // Add isLoading prop
 }
-
-// Default static providers if none are passed via props
-const DEFAULT_STATIC_PROVIDERS: ServiceProvider[] = [
-  { 
-    id: 'ax-kampala-central', 
-    name: 'Auto Xpress - Kampala Central', 
-    phone: '(256) 772-123456', 
-    etaMinutes: 15, 
-    currentLocation: { lat: 0.3136, lng: 32.5811 }, 
-    generalLocation: "Kampala Central",
-    servicesOffered: ['Tire Services', 'Battery Replacement', 'Oil Change', 'Flat tire'] 
-  },
-  { 
-    id: 'ax-lugogo', 
-    name: 'Auto Xpress - Lugogo', 
-    phone: '(256) 772-234567', 
-    etaMinutes: 20, 
-    currentLocation: { lat: 0.3270, lng: 32.5990 }, 
-    generalLocation: "Lugogo",
-    servicesOffered: ['Diagnostics', 'Tire Alignment', 'Jump Start', 'Engine failure'] 
-  },
-];
-
 
 function calculateDistance(loc1: UserLocationType, loc2: UserLocationType): number {
   const R = 6371; // Radius of the Earth in km
@@ -54,16 +31,13 @@ function calculateDistance(loc1: UserLocationType, loc2: UserLocationType): numb
   return R * c;
 }
 
-const ProviderList: FC<ProviderListProps> = ({ userLocation, issueType, onSelectProvider, staticProviders }) => {
-  const [isLoading, setIsLoading] = useState(false); // No initial loading from DB
-  const [allProviders, setAllProviders] = useState<ServiceProvider[]>(staticProviders || DEFAULT_STATIC_PROVIDERS);
+const ProviderList: FC<ProviderListProps> = ({ userLocation, issueType, onSelectProvider, staticProviders, isLoading = false }) => {
+  const [allProviders, setAllProviders] = useState<ServiceProvider[]>(staticProviders || []);
   const [displayedProviders, setDisplayedProviders] = useState<ServiceProvider[]>([]);
   const [noSpecificMatch, setNoSpecificMatch] = useState(false);
 
   useEffect(() => {
-    // Use the provided staticProviders or fallback to default
-    setAllProviders(staticProviders || DEFAULT_STATIC_PROVIDERS);
-    setIsLoading(false); // Data is available immediately
+    setAllProviders(staticProviders || []);
   }, [staticProviders]);
 
 
@@ -106,7 +80,7 @@ const ProviderList: FC<ProviderListProps> = ({ userLocation, issueType, onSelect
     }
   }, [userLocation, issueType, allProviders, isLoading]); 
 
-  if (isLoading && displayedProviders.length === 0) { // Should not happen often with static data
+  if (isLoading && displayedProviders.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center p-10 text-muted-foreground w-full flex-grow">
         <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />

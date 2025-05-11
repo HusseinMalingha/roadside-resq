@@ -21,6 +21,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { useAuth } from '@/contexts/AuthContext'; // For isFirebaseReady check
 
 const GarageManagement = () => {
   const [garages, setGarages] = useState<ServiceProvider[]>([]);
@@ -28,27 +29,44 @@ const GarageManagement = () => {
   const [editingGarage, setEditingGarage] = useState<ServiceProvider | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
+  const { isFirebaseReady } = useAuth();
 
   useEffect(() => {
+    if (!isFirebaseReady) {
+      setIsLoading(false); // Firestore not ready, stop loading
+      return;
+    }
     setIsLoading(true);
     const unsubscribe = listenToGarages((garagesData) => {
       setGarages(garagesData);
       setIsLoading(false);
     });
     return () => unsubscribe();
-  }, []);
+  }, [isFirebaseReady]);
 
   const handleAddGarage = () => {
+    if (!isFirebaseReady) {
+      toast({ title: "Service Unavailable", description: "Cannot add garage, database not connected.", variant: "destructive"});
+      return;
+    }
     setEditingGarage(null);
     setIsDialogOpen(true);
   };
 
   const handleEditGarage = (garage: ServiceProvider) => {
+    if (!isFirebaseReady) {
+      toast({ title: "Service Unavailable", description: "Cannot edit garage, database not connected.", variant: "destructive"});
+      return;
+    }
     setEditingGarage(garage);
     setIsDialogOpen(true);
   };
 
   const handleDeleteGarage = async (garageId: string) => {
+    if (!isFirebaseReady) {
+      toast({ title: "Service Unavailable", description: "Cannot delete garage, database not connected.", variant: "destructive"});
+      return;
+    }
     try {
       await deleteGarage(garageId); 
       toast({ title: "Garage Deleted", description: "The garage provider has been removed." });
@@ -58,14 +76,19 @@ const GarageManagement = () => {
     }
   };
 
-  const handleSaveGarage = async (garageData: ServiceProvider) => {
-    const { id, distanceKm, ...dataToSave } = garageData; 
+  const handleSaveGarage = async (garageData: Omit<ServiceProvider, 'id' | 'distanceKm'> & { id?: string }) => {
+    if (!isFirebaseReady) {
+      toast({ title: "Service Unavailable", description: "Cannot save garage, database not connected.", variant: "destructive"});
+      return;
+    }
+    // Remove id if it's for a new garage, Firestore will generate one
+    const { id, ...dataToSave } = garageData; 
 
     try {
-      if (editingGarage && id) { 
-        await updateGarage(id, dataToSave); 
+      if (editingGarage && editingGarage.id) { 
+        await updateGarage(editingGarage.id, dataToSave); 
       } else { 
-        await addGarage(dataToSave as Omit<ServiceProvider, 'id' | 'distanceKm'>); 
+        await addGarage(dataToSave); 
       }
       setIsDialogOpen(false);
       setEditingGarage(null);
@@ -76,7 +99,7 @@ const GarageManagement = () => {
     }
   };
 
-  if (isLoading) {
+  if (isLoading && isFirebaseReady) {
     return (
         <Card>
             <CardHeader>
@@ -86,6 +109,20 @@ const GarageManagement = () => {
             <CardContent className="text-center py-6">
                 <Loader2 className="mx-auto h-8 w-8 animate-spin text-muted-foreground" />
                 <p className="mt-2 text-muted-foreground">Fetching garage list...</p>
+            </CardContent>
+        </Card>
+    );
+  }
+
+  if (!isFirebaseReady) {
+     return (
+        <Card>
+            <CardHeader>
+                <CardTitle className="text-xl flex items-center"><Globe className="mr-2 h-5 w-5 text-primary" /> Manage Garage Providers</CardTitle>
+                <CardDescription className="text-destructive">Database service not available. Garages cannot be managed.</CardDescription>
+            </CardHeader>
+            <CardContent className="text-center py-6">
+                 <p className="mt-2 text-muted-foreground">Please check configuration.</p>
             </CardContent>
         </Card>
     );
@@ -100,14 +137,14 @@ const GarageManagement = () => {
               <CardTitle className="text-xl flex items-center"><Globe className="mr-2 h-5 w-5 text-primary" /> Manage Garage Providers</CardTitle>
               <CardDescription>Add, edit, or remove service provider branches.</CardDescription>
             </div>
-            <Button onClick={handleAddGarage}>
+            <Button onClick={handleAddGarage} disabled={!isFirebaseReady}>
               <PlusCircle className="mr-2 h-4 w-4" /> Add Garage
             </Button>
           </div>
         </CardHeader>
         <CardContent>
-          {garages.length === 0 ? (
-            <p className="text-muted-foreground text-center py-4">No garage providers added yet. Default mock list may be active.</p>
+          {garages.length === 0 && !isLoading ? (
+            <p className="text-muted-foreground text-center py-4">No garage providers added yet.</p>
           ) : (
             <div className="overflow-x-auto">
               <Table>
@@ -128,12 +165,12 @@ const GarageManagement = () => {
                       <TableCell>{garage.generalLocation} <span className="text-xs text-muted-foreground">({garage.currentLocation.lat.toFixed(2)}, {garage.currentLocation.lng.toFixed(2)})</span></TableCell>
                       <TableCell>{Array.isArray(garage.servicesOffered) ? garage.servicesOffered.length : 0}</TableCell>
                       <TableCell className="text-right">
-                        <Button variant="ghost" size="icon" onClick={() => handleEditGarage(garage)} className="mr-2">
+                        <Button variant="ghost" size="icon" onClick={() => handleEditGarage(garage)} className="mr-2" disabled={!isFirebaseReady}>
                           <Edit className="h-4 w-4" />
                         </Button>
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
-                            <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive">
+                            <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" disabled={!isFirebaseReady}>
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </AlertDialogTrigger>
@@ -172,4 +209,3 @@ const GarageManagement = () => {
 };
 
 export default GarageManagement;
-
