@@ -1,4 +1,22 @@
-import { db, collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, query, where, orderBy, Timestamp, type DocumentSnapshot, limit } from '@/lib/firebase';
+
+import { 
+  db, 
+  collection, 
+  doc, 
+  getDoc, 
+  getDocs, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc as deleteFirestoreDoc, // Renamed to avoid conflict if needed, though not strictly necessary here
+  onSnapshot, 
+  query, 
+  where, 
+  orderBy, 
+  Timestamp, 
+  type DocumentSnapshot, 
+  limit 
+} from '@/lib/firebase';
+import { deleteField } from 'firebase/firestore'; // Import deleteField
 import type { ServiceRequest, Location, VehicleInfo, ServiceProvider } from '@/types';
 
 const REQUESTS_COLLECTION = 'serviceRequests';
@@ -231,18 +249,20 @@ export const respondToCancellationRequest = async (
   if (!currentRequestSnap.exists()) throw new Error("Request not found");
   const currentRequestData = currentRequestSnap.data() as ServiceRequest;
 
-  const updateData: Partial<ServiceRequest> = {
+  // Use 'any' for updatePayload to allow deleteField()
+  const updatePayload: any = { 
     cancellationRequested: false, // Clear the request flag
     cancellationResponse: responseNotes || (approved ? "Cancellation approved." : "Cancellation denied."),
+    statusBeforeCancellation: deleteField(), // Explicitly delete the field
   };
 
   if (approved) {
-    updateData.status = 'Cancelled';
+    updatePayload.status = 'Cancelled';
   } else {
     // Revert to original status if not approved
-    updateData.status = currentRequestData.statusBeforeCancellation || 'Pending'; 
+    updatePayload.status = currentRequestData.statusBeforeCancellation || 'Pending'; 
   }
-  updateData.statusBeforeCancellation = undefined; // Clear this field
 
-  await updateDoc(docRef, updateData);
+  await updateDoc(docRef, updatePayload);
 };
+
