@@ -14,23 +14,20 @@ import {
   type ConfirmationResult, 
   onAuthStateChanged,
   type FirebaseAuthType,
-  doc, // Added doc
-  setDoc, // Added setDoc
-  getDoc, // Added getDoc
-  db as firestoreInstance, // Import db correctly
-  Timestamp // Added Timestamp
 } from '@/lib/firebase'; 
 import { getStaffMemberByEmail } from '@/services/staffService';
+import { getUserProfile, updateUserProfile } from '@/services/userService'; // Import userService functions
 import { useRouter } from 'next/navigation';
 import { useToast } from "@/hooks/use-toast";
-import type { UserRole, UserProfile } from '@/types'; // Ensure UserProfile and UserRole are imported
+import type { UserRole, UserProfile } from '@/types'; 
 
 const ADMIN_EMAIL = 'husseinmalingha@gmail.com';
 const ADMIN_PHONE_NUMBER = '+256759794023';
 
 interface AuthContextType {
   user: User | null;
-  role: UserRole | null; // Role can be null initially
+  userProfile: UserProfile | null; // Store full user profile
+  role: UserRole | null; 
   loading: boolean;
   isFirebaseReady: boolean;
   signInWithGoogle: () => Promise<void>;
@@ -38,69 +35,71 @@ interface AuthContextType {
   signInWithPhoneNumberStep2: (confirmationResult: ConfirmationResult, verificationCode: string) => Promise<void>;
   signOut: () => Promise<void>;
   setupRecaptcha: (elementId: string) => RecaptchaVerifier | null;
+  refreshUserProfile: () => Promise<void>; // Function to manually refresh profile
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Helper function to create/update user profile in Firestore
-const updateUserProfileInFirestore = async (user: User, determinedRole: UserRole) => {
-  if (!firestoreInstance) {
-    console.error("Firestore instance not available, cannot update user profile.");
-    return;
-  }
-  const userProfileRef = doc(firestoreInstance, "users", user.uid);
-  const userProfileData: UserProfile = {
-    uid: user.uid,
-    email: user.email,
-    displayName: user.displayName,
-    photoURL: user.photoURL,
-    phoneNumber: user.phoneNumber,
-    role: determinedRole,
-    // lastLogin: Timestamp.now(), // Example: Track last login
-  };
-  try {
-    await setDoc(userProfileRef, userProfileData, { merge: true }); // merge:true creates or updates
-  } catch (error) {
-    console.error("Error updating user profile in Firestore:", error);
-  }
-};
-
-
 export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [role, setRole] = useState<UserRole | null>(null);
   const [loading, setLoading] = useState(true);
   const [isFirebaseReady, setIsFirebaseReady] = useState(false);
   const router = useRouter();
   const { toast } = useToast();
 
+  const fetchAndSetUserProfile = useCallback(async (currentUser: User) => {
+    let fetchedProfile = await getUserProfile(currentUser.uid);
+    let determinedRole: UserRole = fetchedProfile?.role || 'user';
+    const userEmailLower = currentUser.email?.toLowerCase();
+
+    if (
+      (userEmailLower && userEmailLower === ADMIN_EMAIL.toLowerCase()) ||
+      (currentUser.phoneNumber && currentUser.phoneNumber === ADMIN_PHONE_NUMBER)
+    ) {
+      determinedRole = 'admin';
+    } else if (userEmailLower && determinedRole === 'user') { // Only check staff if not already admin
+      try {
+        const staffProfile = await getStaffMemberByEmail(userEmailLower);
+        if (staffProfile && (staffProfile.role === 'mechanic' || staffProfile.role === 'customer_relations')) {
+          determinedRole = staffProfile.role;
+        }
+      } catch (error) {
+        console.error("Error fetching staff role from Firestore:", error);
+      }
+    }
+    
+    // Prepare profile data, ensuring new fields are included
+    const profileDataToUpdate: Partial<UserProfile> = {
+        uid: currentUser.uid,
+        email: currentUser.email,
+        displayName: currentUser.displayName,
+        photoURL: currentUser.photoURL,
+        phoneNumber: currentUser.phoneNumber, // This is from Firebase Auth
+        role: determinedRole,
+        // Ensure vehicleInfo and contactPhoneNumber are preserved if they exist, or initialized
+        vehicleInfo: fetchedProfile?.vehicleInfo || null,
+        contactPhoneNumber: fetchedProfile?.contactPhoneNumber || currentUser.phoneNumber || null,
+    };
+
+    await updateUserProfile(currentUser.uid, profileDataToUpdate);
+    const updatedProfile = await getUserProfile(currentUser.uid); // Re-fetch to get merged data
+    setUserProfile(updatedProfile);
+    setRole(determinedRole);
+
+  }, []);
+
+
   useEffect(() => {
-    if (firebaseAuthInstance && firestoreInstance) { // Check both auth and db
+    if (firebaseAuthInstance) { 
       setIsFirebaseReady(true);
       const unsubscribe = onAuthStateChanged(firebaseAuthInstance, async (currentUser) => {
         setUser(currentUser);
         if (currentUser) {
-          let determinedRole: UserRole = 'user'; 
-          const userEmailLower = currentUser.email?.toLowerCase();
-
-          if (
-            (userEmailLower && userEmailLower === ADMIN_EMAIL.toLowerCase()) ||
-            (currentUser.phoneNumber && currentUser.phoneNumber === ADMIN_PHONE_NUMBER)
-          ) {
-            determinedRole = 'admin';
-          } else if (userEmailLower) {
-            try {
-              const staffProfile = await getStaffMemberByEmail(userEmailLower);
-              if (staffProfile && (staffProfile.role === 'mechanic' || staffProfile.role === 'customer_relations')) {
-                determinedRole = staffProfile.role;
-              }
-            } catch (error) {
-              console.error("Error fetching staff role from Firestore:", error);
-            }
-          }
-          setRole(determinedRole);
-          await updateUserProfileInFirestore(currentUser, determinedRole); // Update profile
+          await fetchAndSetUserProfile(currentUser);
         } else {
+          setUserProfile(null);
           setRole(null);
         }
         setLoading(false);
@@ -120,7 +119,16 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
       console.warn("AuthContext: Firebase auth or firestore instance is not available. Features may be disabled.");
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); 
+  }, [fetchAndSetUserProfile]); 
+
+  const refreshUserProfile = useCallback(async () => {
+    if (user) {
+        setLoading(true);
+        await fetchAndSetUserProfile(user);
+        setLoading(false);
+    }
+  }, [user, fetchAndSetUserProfile]);
+
 
   const signInWithGoogle = async () => {
     if (!firebaseAuthInstance || !isFirebaseReady) {
@@ -132,14 +140,14 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
     try {
       const provider = new GoogleAuthProvider();
       await signInWithPopup(firebaseAuthInstance, provider);
-      // Role and profile update will be handled by onAuthStateChanged
+      // Profile update handled by onAuthStateChanged
       toast({ title: "Sign-In Successful", description: "Signed in with Google." });
     } catch (error: any) {
       console.error("Error signing in with Google:", error);
       toast({ title: "Google Sign-In Failed", description: error.message || "An unexpected error occurred.", variant: "destructive" });
       throw error;
     } finally {
-      setLoading(false);
+      // setLoading(false); // onAuthStateChanged will set loading
     }
   };
   
@@ -193,7 +201,7 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
       const confirmationResult = await signInWithPhoneNumber(firebaseAuthInstance, phoneNumber, appVerifier);
       toast({ title: "OTP Sent", description: "An OTP has been sent to your phone number." });
       return confirmationResult;
-    } catch (error: any) {
+    } catch (error: any) { 
       console.error("Error sending OTP:", error);
       let errorMessage = "Failed to send OTP. Please check the phone number and try again.";
       if (error.code === 'auth/invalid-phone-number') {
@@ -216,7 +224,7 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
       }
       return null; 
     } finally {
-      setLoading(false);
+      // setLoading(false); // onAuthStateChanged will set loading
     }
   };
 
@@ -229,7 +237,7 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
     setLoading(true);
     try {
       await confirmationResult.confirm(verificationCode);
-      // Role and profile update will be handled by onAuthStateChanged
+      // Profile update handled by onAuthStateChanged
       toast({ title: "Sign-In Successful", description: "Signed in with phone number." });
     } catch (error: any) {
       console.error("Error verifying OTP:", error);
@@ -242,7 +250,7 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
       toast({ title: "Error Verifying OTP", description: errorMessage, variant: "destructive" });
       throw error; 
     } finally {
-      setLoading(false);
+      // setLoading(false); // onAuthStateChanged will set loading
     }
   };
 
@@ -257,6 +265,7 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
       await firebaseSignOut(firebaseAuthInstance);
       toast({ title: "Signed Out", description: "You have been signed out successfully." });
       setUser(null); 
+      setUserProfile(null);
       setRole(null);   
       router.push('/login'); 
     } catch (error: any) {
@@ -268,7 +277,7 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, role, loading, isFirebaseReady, signInWithGoogle, signInWithPhoneNumberStep1, signInWithPhoneNumberStep2, signOut: signOutUser, setupRecaptcha }}>
+    <AuthContext.Provider value={{ user, userProfile, role, loading, isFirebaseReady, signInWithGoogle, signInWithPhoneNumberStep1, signInWithPhoneNumberStep2, signOut: signOutUser, setupRecaptcha, refreshUserProfile }}>
       {children}
     </AuthContext.Provider>
   );
@@ -281,3 +290,4 @@ export const useAuth = (): AuthContextType => {
   }
   return context;
 };
+

@@ -58,8 +58,11 @@ export interface UserProfile {
   email?: string | null;
   displayName?: string | null;
   photoURL?: string | null;
-  phoneNumber?: string | null;
-  role: StaffRole; // Store user role in their profile
+  phoneNumber?: string | null; // From Firebase Auth (usually verified)
+  contactPhoneNumber?: string | null; // User-provided, editable contact number
+  role: StaffRole; 
+  vehicleInfo?: VehicleInfo | null; // User's default vehicle
+  // lastLogin: Timestamp; // Example
 }
 
 export interface DraftServiceRequestData {
@@ -70,3 +73,4 @@ export interface DraftServiceRequestData {
   vehicleInfo?: VehicleInfo | null;
   lastUpdated?: Date | Timestamp; // Date for app, Timestamp for Firestore
 }
+

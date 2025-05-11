@@ -18,12 +18,12 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { addServiceRequest, listenToRequestById } from '@/services/requestService'; 
 import { getDraftRequest, saveDraftRequest, deleteDraftRequest } from '@/services/draftRequestService'; 
-import { getAllGarages } from '@/services/garageService'; // To fetch providers
+import { getAllGarages } from '@/services/garageService'; 
 
 type AppStep = 'initial' | 'details' | 'providers' | 'tracking' | 'completed';
 
 export default function RoadsideRescuePage() {
-  const { user, role, loading: authLoading, isFirebaseReady } = useAuth();
+  const { user, userProfile, role, loading: authLoading, isFirebaseReady } = useAuth(); // Added userProfile
   const router = useRouter();
 
   const [currentStep, setCurrentStep] = useState<AppStep>('initial');
@@ -49,7 +49,6 @@ export default function RoadsideRescuePage() {
 
   const { toast } = useToast();
 
-  // Fetch providers when app initializes or firebase becomes ready
   useEffect(() => {
     const fetchProviders = async () => {
       if (isFirebaseReady) {
@@ -106,6 +105,7 @@ export default function RoadsideRescuePage() {
               setConfirmedIssueSummary(draft.issueSummary);
               if(draft.issueDescription) setIsIssueConfirmed(true); 
             }
+            // Vehicle info from draft is still loaded here, not from profile for a draft.
             if (draft.vehicleInfo) {
               setVehicleInfo(draft.vehicleInfo);
               setIsVehicleInfoConfirmed(true);
@@ -119,7 +119,7 @@ export default function RoadsideRescuePage() {
           setIsLoadingDraft(false);
         }
       } else if (!isFirebaseReady && currentStep === 'details') {
-         setIsLoadingDraft(false); // Not ready, don't attempt load
+         setIsLoadingDraft(false); 
       } else {
         setIsLoadingDraft(false);
       }
@@ -183,6 +183,9 @@ export default function RoadsideRescuePage() {
     setHasProviderArrivedSimulation(false); 
     
     if (userLocation && user && vehicleInfo && isFirebaseReady) { 
+      // Determine user phone: Profile contact > Auth phone > "N/A"
+      const userContactPhone = userProfile?.contactPhoneNumber || user.phoneNumber || "N/A";
+
       const newRequestData: Omit<ServiceRequestType, 'id' | 'requestTime'> & { requestTime: Date } = {
         requestId: `RR-${Math.random().toString(36).substring(2, 7).toUpperCase()}`,
         userId: user.uid, 
@@ -190,12 +193,12 @@ export default function RoadsideRescuePage() {
         issueDescription: issueDescription,
         issueSummary: confirmedIssueSummary,
         vehicleInfo: vehicleInfo, 
-        selectedProvider: provider, // Embed provider details
-        selectedProviderId: provider.id, // Store provider ID
+        selectedProvider: provider, 
+        selectedProviderId: provider.id, 
         requestTime: new Date(), 
         status: 'Pending', 
-        userName: user.displayName || user.email || "N/A",
-        userPhone: user.phoneNumber || "N/A"
+        userName: userProfile?.displayName || user.displayName || user.email || "N/A",
+        userPhone: userContactPhone, // Use determined contact phone
       };
       
       try {
@@ -289,63 +292,71 @@ export default function RoadsideRescuePage() {
         
         if (newServiceRequest.selectedProvider) {
             setSelectedProvider(newServiceRequest.selectedProvider);
-            setProviderETA(newServiceRequest.selectedProvider.etaMinutes); 
-            setProviderCurrentLocation(newServiceRequest.selectedProvider.currentLocation); 
+            // Do not update ETA or provider location from here, as simulation handles it.
+            // setProviderETA(newServiceRequest.selectedProvider.etaMinutes); 
+            // setProviderCurrentLocation(newServiceRequest.selectedProvider.currentLocation); 
         }
 
         if (newServiceRequest.status === 'Completed' || newServiceRequest.status === 'Cancelled') {
           setCurrentStep('completed');
         }
       } else {
-        console.warn(`Request with ID ${serviceRequestId} not found.`);
+        // This might happen if the request is deleted or ID is incorrect
+        console.warn(`Request with ID ${serviceRequestId} not found or inaccessible.`);
+        // Optionally, handle this by resetting the view or showing an error
+        // resetApp(); // Or navigate to an error page or home
+        // toast({ title: "Request Error", description: "Could not track your request.", variant: "destructive"});
       }
     });
 
     return () => unsubscribe(); 
   }, [serviceRequestId, toast, currentStep, serviceRequest?.status, isFirebaseReady]);
 
+  // Simulation of provider movement - ETA remains static original estimate.
   useEffect(() => {
     let trackingInterval: NodeJS.Timeout | null = null;
-
     if (currentStep === 'tracking' && selectedProvider && userLocation && providerETA !== null && serviceRequest && (serviceRequest.status === 'Accepted' || serviceRequest.status === 'In Progress')) {
-      let currentSimulatedProviderLoc = providerCurrentLocation || selectedProvider.currentLocation; 
-      const initialProviderLat = selectedProvider.currentLocation.lat;
-      const initialProviderLng = selectedProvider.currentLocation.lng;
-      const userLat = userLocation.lat;
-      const userLng = userLocation.lng;
-      
-      const simulationDurationSeconds = Math.min(providerETA * 60, 120); 
-      const updateIntervalMs = 2000;
-      let elapsedSimulationTimeMs = 0;
+        // Use initial provider location for simulation start
+        const initialSimProviderLoc = selectedProvider.currentLocation;
+        let currentSimulatedProviderLat = initialSimProviderLoc.lat;
+        let currentSimulatedProviderLng = initialSimProviderLoc.lng;
+        
+        setProviderCurrentLocation(initialSimProviderLoc); // Set initial display location
 
-      trackingInterval = setInterval(() => {
-        elapsedSimulationTimeMs += updateIntervalMs;
-        const progressRatio = Math.min(elapsedSimulationTimeMs / (simulationDurationSeconds * 1000), 1);
+        const userLat = userLocation.lat;
+        const userLng = userLocation.lng;
+        
+        // Simulate arrival based on a fraction of ETA, max 2 minutes for demo.
+        // The simulation moves the provider over a fixed time, not strictly by ETA.
+        const simulationDurationSeconds = Math.min(providerETA * 60 * 0.25, 120); // e.g. simulate 1/4 of ETA, or 2 mins max
+        const updateIntervalMs = 2000; // Update every 2 seconds
+        let elapsedSimulationTimeMs = 0;
 
-        if (userLocation && currentSimulatedProviderLoc && selectedProvider) {
-            currentSimulatedProviderLoc = {
-              lat: initialProviderLat + (userLat - initialProviderLat) * progressRatio,
-              lng: initialProviderLng + (userLng - initialProviderLng) * progressRatio,
-            };
-            setProviderCurrentLocation(currentSimulatedProviderLoc);
-        }
+        trackingInterval = setInterval(() => {
+            elapsedSimulationTimeMs += updateIntervalMs;
+            const progressRatio = Math.min(elapsedSimulationTimeMs / (simulationDurationSeconds * 1000), 1);
 
-        if (progressRatio >= 1 && !hasProviderArrivedSimulation) {
-          setHasProviderArrivedSimulation(true); 
-          if (selectedProvider) { 
-            toast({
-              title: "Provider should be Arriving!",
-              description: `${selectedProvider.name} is expected at your location. Actual status: ${serviceRequest.status}.`,
-              duration: 7000,
-            });
-          }
-        }
-      }, updateIntervalMs);
+            currentSimulatedProviderLat = initialSimProviderLoc.lat + (userLat - initialSimProviderLoc.lat) * progressRatio;
+            currentSimulatedProviderLng = initialSimProviderLoc.lng + (userLng - initialSimProviderLoc.lng) * progressRatio;
+            
+            setProviderCurrentLocation({ lat: currentSimulatedProviderLat, lng: currentSimulatedProviderLng });
+
+            if (progressRatio >= 1 && !hasProviderArrivedSimulation) {
+                setHasProviderArrivedSimulation(true); 
+                if (selectedProvider) { 
+                    toast({
+                        title: "Provider Nearing Arrival!",
+                        description: `${selectedProvider.name} is close to your location. Actual status: ${serviceRequest.status}.`,
+                        duration: 7000,
+                    });
+                }
+            }
+        }, updateIntervalMs);
     }
     return () => {
-      if (trackingInterval) clearInterval(trackingInterval);
+        if (trackingInterval) clearInterval(trackingInterval);
     };
-  }, [currentStep, selectedProvider, userLocation, providerETA, toast, serviceRequest, hasProviderArrivedSimulation, providerCurrentLocation]); 
+}, [currentStep, selectedProvider, userLocation, providerETA, toast, serviceRequest, hasProviderArrivedSimulation]);
 
 
   const allDetailsProvided = isLocationConfirmed && isIssueConfirmed && isVehicleInfoConfirmed;
@@ -471,7 +482,7 @@ export default function RoadsideRescuePage() {
 
             <VehicleInfoForm 
               onVehicleInfoSubmit={handleVehicleInfoSubmit}
-              initialData={vehicleInfo || {}}
+              initialData={vehicleInfo || userProfile?.vehicleInfo || {}} // Pre-fill from profile if available, then draft, then empty
               isSubmitted={isVehicleInfoConfirmed}
             />
             
@@ -507,7 +518,7 @@ export default function RoadsideRescuePage() {
               userLocation={userLocation}
               issueType={confirmedIssueSummary}
               onSelectProvider={handleSelectProvider}
-              staticProviders={availableProviders} // Pass fetched providers
+              staticProviders={availableProviders} 
               isLoading={isLoadingProviders}
             />
           </div>
@@ -630,3 +641,4 @@ export default function RoadsideRescuePage() {
     </div>
   );
 }
+
