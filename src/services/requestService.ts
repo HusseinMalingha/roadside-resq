@@ -43,6 +43,7 @@ export const getUserRequests = async (userId: string): Promise<ServiceRequest[]>
   const q = query(
     collection(db, REQUESTS_COLLECTION),
     where('userId', '==', userId),
+    where('status', '==', 'Completed'), // Only fetch completed requests
     orderBy('requestTime', 'desc')
   );
   const querySnapshot = await getDocs(q);
@@ -125,6 +126,7 @@ export const listenToRequestsForUser = (
   const q = query(
     collection(db, REQUESTS_COLLECTION),
     where("userId", "==", userId),
+    where('status', '==', 'Completed'), // Only listen to completed requests
     orderBy("requestTime", "desc")
   );
 

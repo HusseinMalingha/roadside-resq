@@ -67,3 +67,37 @@ If you encounter an error related to querying active service requests (e.g., in 
 8.  Click **Create**.
 
 Wait for the index to build. This index allows Firestore to efficiently filter by `userId`, then by specific `status` values, and finally order the results by `requestTime`.
+
+---
+
+## Index for User's Completed Request History
+
+If you are filtering the "My Requests" page to show only 'Completed' requests for a specific user, you'll need an index like this:
+
+**Query pattern (example):**
+`query(collection(db, 'serviceRequests'), where('userId', '==', userId), where('status', '==', 'Completed'), orderBy('requestTime', 'desc'))`
+
+**Required Index:**
+
+*   **Collection ID:** `serviceRequests`
+*   **Fields to index:**
+    1.  `userId` (Ascending)
+    2.  `status` (Ascending) - *For the equality filter on `status`.*
+    3.  `requestTime` (Descending) - *For ordering.*
+*   **Query scope:** Collection
+
+**How to create manually:**
+
+1.  Go to your Firebase Console.
+2.  Navigate to **Firestore Database** -> **Indexes**.
+3.  Click on **Composite Indexes** tab.
+4.  Click **Add Index**.
+5.  **Collection ID:** `serviceRequests`
+6.  **Fields to index:**
+    *   Add field: `userId`, Order: Ascending
+    *   Add field: `status`, Order: Ascending
+    *   Add field: `requestTime`, Order: Descending
+7.  **Query scopes:** Select "Collection".
+8.  Click **Create**.
+
+Wait for the index to build. This index allows Firestore to efficiently find all requests for a specific user that have the status 'Completed' and then order them by time.

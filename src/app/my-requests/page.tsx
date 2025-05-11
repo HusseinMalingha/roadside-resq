@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import { getUserRequests } from '@/services/requestService'; 
+import { getUserRequests, listenToRequestsForUser } from '@/services/requestService'; 
 import type { ServiceRequest } from '@/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -20,33 +20,47 @@ export default function MyRequestsPage() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    let unsubscribe: (() => void) | null = null;
     if (!authLoading) { 
       if (!user && isFirebaseReady) { 
         router.push('/login?redirect=/my-requests');
+        setIsLoading(false);
       } else if (user && isFirebaseReady) { 
         setIsLoading(true); 
-        getUserRequests(user.uid) 
-          .then((requests) => {
-            setUserRequests(requests.map(r => ({...r, requestTime: new Date(r.requestTime as Date)}))); // Ensure date is Date object
-          })
-          .catch(error => {
-            console.error("Failed to fetch user requests from Firestore:", error);
-            // Optionally show a toast to the user
-          })
-          .finally(() => {
+        // Initial fetch for immediate display (optional, listener will update too)
+        // getUserRequests(user.uid) 
+        //   .then((requests) => {
+        //     setUserRequests(requests.map(r => ({...r, requestTime: new Date(r.requestTime as Date)})));
+        //   })
+        //   .catch(error => {
+        //     console.error("Failed to fetch user requests from Firestore:", error);
+        //   })
+        //   .finally(() => {
+        //     setIsLoading(false); 
+        //   });
+        
+        // Set up listener for real-time updates
+        unsubscribe = listenToRequestsForUser(user.uid, (requests) => {
+            setUserRequests(requests.map(r => ({...r, requestTime: new Date(r.requestTime as Date)})));
             setIsLoading(false); 
-          });
+        });
+
       } else if (!isFirebaseReady) { // Auth/DB service not ready
         setIsLoading(false);
       }
     }
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
   }, [user, authLoading, router, isFirebaseReady]);
 
   if (authLoading || (isLoading && isFirebaseReady)) { 
     return (
       <div className="flex-grow flex flex-col items-center justify-center">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
-        <p className="mt-4 text-muted-foreground">Loading your requests...</p>
+        <p className="mt-4 text-muted-foreground">Loading your request history...</p>
       </div>
     );
   }
@@ -100,9 +114,9 @@ export default function MyRequestsPage() {
             <div>
               <CardTitle className="text-2xl md:text-3xl flex items-center">
                 <ListChecks className="mr-3 h-7 w-7 text-primary" />
-                My Service Requests
+                My Service Request History
               </CardTitle>
-              <CardDescription>A history of your past assistance requests with ResQ.</CardDescription>
+              <CardDescription>A history of your completed assistance requests with ResQ.</CardDescription>
             </div>
             <Button asChild variant="outline">
               <Link href="/">
@@ -115,8 +129,8 @@ export default function MyRequestsPage() {
           {userRequests.length === 0 && !isLoading ? ( 
             <div className="text-center py-10">
               <Info className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-              <p className="text-xl font-semibold text-muted-foreground">No Past Requests Found</p>
-              <p className="text-sm text-muted-foreground mt-1">You haven't made any service requests yet.</p>
+              <p className="text-xl font-semibold text-muted-foreground">No Completed Requests Found</p>
+              <p className="text-sm text-muted-foreground mt-1">You haven't had any service requests completed yet.</p>
             </div>
           ) : (
             <ScrollArea className="h-[calc(100vh-250px)] md:h-[calc(100vh-300px)]">
@@ -132,3 +146,4 @@ export default function MyRequestsPage() {
     </div>
   );
 }
+
