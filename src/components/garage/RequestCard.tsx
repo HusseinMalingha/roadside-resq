@@ -7,7 +7,7 @@ import React, { useState } from 'react';
 import type { ServiceRequest, StaffMember, UserRole } from '@/types';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { MapPin, User, Phone, Wrench, CheckCircle, Send, XCircle, Hourglass, CarIcon, UserCheck, UserPlus, Edit2 } from 'lucide-react';
+import { MapPin, User, Phone, Wrench, CheckCircle, Send, XCircle, Hourglass, CarIcon, UserCheck, UserPlus, Edit2, MessageCircleWarning, AlertTriangle } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -18,6 +18,9 @@ import {
 import { Button } from '@/components/ui/button';
 import AssignStaffDialog from './AssignStaffDialog'; 
 import LogMechanicDetailsDialog from './LogMechanicDetailsDialog'; 
+import RespondToCancellationDialog from './RespondToCancellationDialog'; // Import new dialog
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+
 
 interface RequestCardProps {
   request: ServiceRequest;
@@ -28,6 +31,7 @@ interface RequestCardProps {
   currentUserRole: UserRole;
   currentUserId?: string; 
   currentUserEmail?: string; 
+  onRespondToCancellation?: (requestId: string, approved: boolean, responseNotes?: string) => void;
 }
 
 const statusColors: Record<ServiceRequest['status'], string> = {
@@ -50,24 +54,30 @@ const RequestCard: FC<RequestCardProps> = ({
     request, 
     onStatusChange, 
     onAssignStaff, 
-    staffList, // This is the full list of staff members from admin page
-    assignableStaffList, // This is the pre-filtered list of *assignable* mechanics
+    staffList, 
+    assignableStaffList, 
     currentUserRole,
-    currentUserEmail
+    currentUserEmail,
+    onRespondToCancellation
 }) => {
   const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false);
   const [isLogDetailsDialogOpen, setIsLogDetailsDialogOpen] = useState(false);
+  const [isRespondCancelDialogOpen, setIsRespondCancelDialogOpen] = useState(false);
   const [targetStatusOnSubmitForLogging, setTargetStatusOnSubmitForLogging] = useState<ServiceRequest['status']>(request.status);
 
 
   const StatusIcon = statusIcons[request.status];
-  // Use staffList (all staff) to find the assigned mechanic for display purposes
   const assignedMechanic = staffList.find(staff => staff.id === request.assignedStaffId && staff.role === 'mechanic');
 
   const currentMechanicStaffProfile = staffList.find(s => s.email.toLowerCase() === currentUserEmail?.toLowerCase() && s.role === 'mechanic');
   const isCurrentUserAssignedMechanic = !!currentMechanicStaffProfile && request.assignedStaffId === currentMechanicStaffProfile.id;
 
   const handleLocalStatusChange = (newStatus: ServiceRequest['status']) => {
+    if (request.cancellationRequested && request.status === 'Pending') {
+        alert("Please respond to the cancellation request first.");
+        return;
+    }
+
     if (currentUserRole === 'admin') {
       if (newStatus === 'Accepted' && !request.assignedStaffId && onAssignStaff) {
         onStatusChange(request.id, newStatus); 
@@ -94,19 +104,27 @@ const RequestCard: FC<RequestCardProps> = ({
     setTargetStatusOnSubmitForLogging(request.status); 
     setIsLogDetailsDialogOpen(true);
   };
+  
+  const handleRespondToCancellationSubmit = (approved: boolean, responseNotes?: string) => {
+    if (onRespondToCancellation) {
+        onRespondToCancellation(request.id, approved, responseNotes);
+    }
+    setIsRespondCancelDialogOpen(false);
+  }
 
-  const canAdminAssign = currentUserRole === 'admin' && onAssignStaff && request.status !== 'Completed' && request.status !== 'Cancelled';
+  const canAdminAssign = currentUserRole === 'admin' && onAssignStaff && request.status !== 'Completed' && request.status !== 'Cancelled' && !(request.cancellationRequested && request.status === 'Pending');
+  const canRespondToCancellation = (currentUserRole === 'admin' || (currentUserRole === 'mechanic' && isCurrentUserAssignedMechanic)) && request.cancellationRequested && request.status === 'Pending' && onRespondToCancellation;
   
   const allMechanicsFromStaffList = staffList.filter(s => s.role === 'mechanic');
 
   const availableStatusesForSelect: ServiceRequest['status'][] = 
-    currentUserRole === 'admin' 
-    ? ['Pending', 'Accepted', 'In Progress', 'Completed', 'Cancelled']
-    : currentUserRole === 'mechanic' && isCurrentUserAssignedMechanic
+    (currentUserRole === 'admin' || (currentUserRole === 'mechanic' && isCurrentUserAssignedMechanic))
     ? (
+        request.cancellationRequested && request.status === 'Pending' ? [request.status] : // Lock status if cancellation is pending
         request.status === 'Accepted' ? ['Accepted', 'In Progress', 'Cancelled'] :
         request.status === 'In Progress' ? ['In Progress', 'Completed', 'Cancelled'] :
-        [request.status]
+        request.status === 'Pending' ? ['Pending', 'Accepted', 'Cancelled'] : // Admin can accept pending
+        [request.status] // Completed or Cancelled
       ) as ServiceRequest['status'][]
     : [request.status];
 
@@ -122,13 +140,33 @@ const RequestCard: FC<RequestCardProps> = ({
                 Received: {new Date(request.requestTime).toLocaleString()}
               </CardDescription>
             </div>
-            <Badge className={`text-white ${statusColors[request.status]} flex items-center`}>
-              <StatusIcon className="mr-1.5 h-3.5 w-3.5" />
-              {request.status}
+             <Badge className={`text-white ${request.cancellationRequested && request.status === 'Pending' ? 'bg-orange-500 animate-pulse' : statusColors[request.status]} flex items-center`}>
+              {request.cancellationRequested && request.status === 'Pending' ? <MessageCircleWarning className="mr-1.5 h-3.5 w-3.5" /> : <StatusIcon className="mr-1.5 h-3.5 w-3.5" />}
+              {request.cancellationRequested && request.status === 'Pending' ? 'Cancellation Pending' : request.status}
             </Badge>
           </div>
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
+           {request.cancellationRequested && request.status === 'Pending' && (
+            <Alert variant="default" className="bg-orange-100 border-orange-400 text-orange-800">
+              <AlertTriangle className="h-5 w-5 text-orange-600" />
+              <AlertTitle className="font-semibold">User Cancellation Requested</AlertTitle>
+              <AlertDescription>
+                Reason: {request.cancellationReason || "Not specified."}
+                {canRespondToCancellation && " Please respond below."}
+              </AlertDescription>
+            </Alert>
+          )}
+          {request.status === 'Cancelled' && request.cancellationResponse && (
+             <Alert variant="destructive">
+              <AlertTriangle className="h-5 w-5" />
+              <AlertTitle className="font-semibold">Cancellation Processed</AlertTitle>
+              <AlertDescription>
+                Response: {request.cancellationResponse}
+              </AlertDescription>
+            </Alert>
+          )}
+
           <div>
             <h4 className="font-semibold text-base mb-1">Issue: {request.issueSummary}</h4>
             <p className="text-muted-foreground text-xs italic">Details: {request.issueDescription || "Not provided"}</p>
@@ -205,13 +243,18 @@ const RequestCard: FC<RequestCardProps> = ({
                 <p className="text-xs text-muted-foreground">Status: {request.status}</p>
             )}
           </div>
-          <div className="flex gap-2 w-full sm:w-auto">
+          <div className="flex gap-2 w-full sm:w-auto flex-wrap justify-end">
+            {canRespondToCancellation && (
+                <Button size="sm" variant="outline" onClick={() => setIsRespondCancelDialogOpen(true)} className="text-xs flex-1 sm:flex-initial bg-orange-400 hover:bg-orange-500 text-white">
+                    <MessageCircleWarning className="mr-1.5 h-3.5 w-3.5"/> Respond to Cancellation
+                </Button>
+            )}
             {canAdminAssign && (
               <Button size="sm" variant="outline" onClick={() => setIsAssignDialogOpen(true)} className="text-xs flex-1 sm:flex-initial">
                 <UserPlus className="mr-1.5 h-3.5 w-3.5"/> {request.assignedStaffId ? 'Re-assign' : 'Assign'}
               </Button>
             )}
-            {currentUserRole === 'mechanic' && isCurrentUserAssignedMechanic && (request.status === 'Accepted' || request.status === 'In Progress') && (
+            {currentUserRole === 'mechanic' && isCurrentUserAssignedMechanic && (request.status === 'Accepted' || request.status === 'In Progress') && !(request.cancellationRequested && request.status === 'Pending') && (
               <Button size="sm" variant="outline" onClick={handleOpenLogDetailsDialog} className="text-xs flex-1 sm:flex-initial">
                 <Edit2 className="mr-1.5 h-3.5 w-3.5"/> Log Details
               </Button>
@@ -227,7 +270,7 @@ const RequestCard: FC<RequestCardProps> = ({
           requestId={request.id}
           currentAssignedStaffId={request.assignedStaffId}
           availableMechanics={assignableStaffList} 
-          allMechanics={allMechanicsFromStaffList} // Pass all mechanics for name lookup
+          allMechanics={allMechanicsFromStaffList} 
           onAssignStaff={(reqId, staffId) => {
             if(onAssignStaff) onAssignStaff(reqId, staffId);
             setIsAssignDialogOpen(false);
@@ -243,9 +286,16 @@ const RequestCard: FC<RequestCardProps> = ({
             targetStatusOnSubmit={targetStatusOnSubmitForLogging}
          />
       )}
+      {canRespondToCancellation && (
+        <RespondToCancellationDialog
+            isOpen={isRespondCancelDialogOpen}
+            onClose={() => setIsRespondCancelDialogOpen(false)}
+            request={request}
+            onSubmit={handleRespondToCancellationSubmit}
+        />
+      )}
     </>
   );
 };
 
 export default RequestCard;
-

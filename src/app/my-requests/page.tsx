@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import { getUserRequests, listenToRequestsForUser } from '@/services/requestService'; 
+import { listenToRequestsForUser } from '@/services/requestService'; 
 import type { ServiceRequest } from '@/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -29,6 +29,7 @@ export default function MyRequestsPage() {
       } else if (user && isFirebaseReady) { 
         setIsLoading(true); 
         
+        // listenToRequestsForUser now includes 'Cancelled' requests
         unsubscribe = listenToRequestsForUser(user.uid, (requests) => {
             setUserRequests(requests.map(r => ({...r, requestTime: new Date(r.requestTime as Date)})));
             setIsLoading(false); 
@@ -105,7 +106,7 @@ export default function MyRequestsPage() {
                 <ListChecks className="mr-3 h-7 w-7 text-primary" />
                 My Service Request History
               </CardTitle>
-              <CardDescription>A history of your completed assistance requests with ResQ.</CardDescription>
+              <CardDescription>A history of your completed and cancelled assistance requests with ResQ.</CardDescription>
             </div>
             <Button asChild variant="outline">
               <Link href="/">
@@ -118,8 +119,8 @@ export default function MyRequestsPage() {
           {userRequests.length === 0 && !isLoading ? ( 
             <div className="text-center py-10">
               <Info className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-              <p className="text-xl font-semibold text-muted-foreground">No Completed Requests Found</p>
-              <p className="text-sm text-muted-foreground mt-1">You haven't had any service requests completed yet.</p>
+              <p className="text-xl font-semibold text-muted-foreground">No Requests Found</p>
+              <p className="text-sm text-muted-foreground mt-1">You haven't had any service requests completed or cancelled yet.</p>
             </div>
           ) : (
             <ScrollArea className="h-[calc(100vh-250px)] md:h-[calc(100vh-300px)]">

@@ -27,6 +27,10 @@ const requestFromDoc = (docSnap: DocumentSnapshot): ServiceRequest => {
     assignedStaffId: data.assignedStaffId,
     mechanicNotes: data.mechanicNotes,
     resourcesUsed: data.resourcesUsed,
+    cancellationRequested: data.cancellationRequested,
+    cancellationReason: data.cancellationReason,
+    cancellationResponse: data.cancellationResponse,
+    statusBeforeCancellation: data.statusBeforeCancellation,
   } as ServiceRequest;
 };
 
@@ -43,7 +47,7 @@ export const getUserRequests = async (userId: string): Promise<ServiceRequest[]>
   const q = query(
     collection(db, REQUESTS_COLLECTION),
     where('userId', '==', userId),
-    where('status', '==', 'Completed'), // Only fetch completed requests
+    where('status', 'in', ['Completed', 'Cancelled']), // Fetch completed and cancelled requests
     orderBy('requestTime', 'desc')
   );
   const querySnapshot = await getDocs(q);
@@ -126,7 +130,7 @@ export const listenToRequestsForUser = (
   const q = query(
     collection(db, REQUESTS_COLLECTION),
     where("userId", "==", userId),
-    where('status', '==', 'Completed'), // Only listen to completed requests
+    where('status', 'in', ['Completed', 'Cancelled']), // Listen to completed and cancelled requests
     orderBy("requestTime", "desc")
   );
 
@@ -138,6 +142,9 @@ export const listenToRequestsForUser = (
     },
     (error) => {
       console.error("Error listening to service requests for user:", error);
+      // Firestore error details are often in error.code and error.message
+      console.error("Firebase error code:", (error as any).code);
+      console.error("Firebase error message:", (error as any).message);
       callback([]);
     }
   );
@@ -175,7 +182,7 @@ export const listenToActiveUserRequest = (
   const q = query(
     collection(db, REQUESTS_COLLECTION),
     where('userId', '==', userId),
-    where('status', 'in', ['Pending', 'Accepted', 'In Progress']),
+    where('status', 'in', ['Pending', 'Accepted', 'In Progress']), // Only listen to requests that are not completed or cancelled by garage
     orderBy('requestTime', 'desc'),
     limit(1)
   );
@@ -195,4 +202,47 @@ export const listenToActiveUserRequest = (
     }
   );
   return unsubscribe;
+};
+
+
+export const requestCancellation = async (requestId: string, reason: string): Promise<void> => {
+  if (!db) throw new Error("Firestore not initialized");
+  const docRef = doc(db, REQUESTS_COLLECTION, requestId);
+  const currentRequestSnap = await getDoc(docRef);
+  if (!currentRequestSnap.exists()) throw new Error("Request not found");
+  const currentRequestData = currentRequestSnap.data() as ServiceRequest;
+
+  await updateDoc(docRef, {
+    cancellationRequested: true,
+    cancellationReason: reason,
+    statusBeforeCancellation: currentRequestData.status, // Store current status
+    status: 'Pending', // Change status to Pending to signify cancellation request needs review
+  });
+};
+
+export const respondToCancellationRequest = async (
+  requestId: string,
+  approved: boolean,
+  responseNotes?: string
+): Promise<void> => {
+  if (!db) throw new Error("Firestore not initialized");
+  const docRef = doc(db, REQUESTS_COLLECTION, requestId);
+  const currentRequestSnap = await getDoc(docRef);
+  if (!currentRequestSnap.exists()) throw new Error("Request not found");
+  const currentRequestData = currentRequestSnap.data() as ServiceRequest;
+
+  const updateData: Partial<ServiceRequest> = {
+    cancellationRequested: false, // Clear the request flag
+    cancellationResponse: responseNotes || (approved ? "Cancellation approved." : "Cancellation denied."),
+  };
+
+  if (approved) {
+    updateData.status = 'Cancelled';
+  } else {
+    // Revert to original status if not approved
+    updateData.status = currentRequestData.statusBeforeCancellation || 'Pending'; 
+  }
+  updateData.statusBeforeCancellation = undefined; // Clear this field
+
+  await updateDoc(docRef, updateData);
 };

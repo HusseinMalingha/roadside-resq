@@ -23,6 +23,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
 import AssignStaffDialog from '@/components/garage/AssignStaffDialog';
+import { respondToCancellationRequest } from '@/services/requestService';
 
 // Import Firestore based services
 import { listenToRequests, updateServiceRequest, getAllRequests } from '@/services/requestService';
@@ -50,7 +51,7 @@ export default function GarageAdminPage() {
 
   const loadInitialData = useCallback(async () => {
     if (!isFirebaseReady) {
-      setIsLoadingData(false); // Firebase not ready, can't load data
+      setIsLoadingData(false); 
       return;
     }
     setIsLoadingData(true);
@@ -59,15 +60,13 @@ export default function GarageAdminPage() {
       const processedRequests = initialRequestsData.map(r => ({
           ...r,
           vehicleInfo: r.vehicleInfo || DEFAULT_VEHICLE_INFO,
-          requestTime: new Date(r.requestTime as Date) // Ensure date object
+          requestTime: new Date(r.requestTime as Date) 
       })).sort((a, b) => (new Date(b.requestTime)).getTime() - (new Date(a.requestTime)).getTime());
       setRequests(processedRequests);
 
       const initialGaragesData = await getAllGarages();
       setGarageProviders(initialGaragesData);
 
-      // Fetch staff members if user is admin OR any other authenticated staff role
-      // as mechanics need to find their profile in the staff list.
       if (user && (role === 'admin' || role === 'mechanic' || role === 'customer_relations')) {
         const initialStaffData = await getAllStaffMembers(); 
         setStaffMembers(initialStaffData);
@@ -80,7 +79,7 @@ export default function GarageAdminPage() {
           variant: "default",
           duration: 4000,
         });
-        const currentPendingCount = initialRequestsData.filter(req => req.status === 'Pending').length;
+        const currentPendingCount = initialRequestsData.filter(req => req.status === 'Pending' && !req.cancellationRequested).length;
         prevPendingCountRef.current = currentPendingCount;
         initialLoadRef.current = false; 
       }
@@ -102,7 +101,6 @@ export default function GarageAdminPage() {
       } else if (user && isFirebaseReady && initialLoadRef.current) { 
         loadInitialData();
       } else if (!isFirebaseReady && initialLoadRef.current) {
-        // Firebase not ready, stop initial loading indicator
         setIsLoadingData(false);
         initialLoadRef.current = false;
       }
@@ -110,7 +108,6 @@ export default function GarageAdminPage() {
   }, [authLoading, user, router, loadInitialData, isFirebaseReady]);
 
 
-  // Listener for service requests
   useEffect(() => {
     if (!user || !isFirebaseReady) return; 
     const unsubscribeRequests = listenToRequests((updatedRequests) => { 
@@ -120,7 +117,8 @@ export default function GarageAdminPage() {
         requestTime: new Date(r.requestTime as Date)
       })).sort((a, b) => (new Date(b.requestTime)).getTime() - (new Date(a.requestTime)).getTime());
       
-      const currentPendingCount = processedRequests.filter(req => req.status === 'Pending').length;
+      const currentPendingCount = processedRequests.filter(req => req.status === 'Pending' && !req.cancellationRequested).length;
+      const cancellationRequestsCount = processedRequests.filter(req => req.cancellationRequested && req.status === 'Pending').length;
       
       if (!initialLoadRef.current && currentPendingCount > prevPendingCountRef.current) {
          toast({
@@ -136,6 +134,14 @@ export default function GarageAdminPage() {
             duration: 4000,
         });
       }
+      if (!initialLoadRef.current && cancellationRequestsCount > 0) {
+         toast({
+            title: "⚠️ Cancellation Requested",
+            description: `${cancellationRequestsCount} request(s) have pending cancellation. Please review.`,
+            variant: "default", // Or a warning variant if you have one
+            duration: 8000,
+          });
+      }
       prevPendingCountRef.current = currentPendingCount;
       setRequests(processedRequests);
       if (isLoadingData && !initialLoadRef.current) setIsLoadingData(false); 
@@ -143,15 +149,12 @@ export default function GarageAdminPage() {
     return () => unsubscribeRequests(); 
   }, [user, toast, isLoadingData, isFirebaseReady]); 
 
-  // Listener for staff members
   useEffect(() => {
-    // Allow admin and other staff roles (e.g., mechanic) to listen to staff updates.
     if (!user || !isFirebaseReady || !['admin', 'mechanic', 'customer_relations'].includes(role || '')) return; 
     const unsubscribeStaff = listenToStaffMembers(setStaffMembers);
     return () => unsubscribeStaff();
   }, [user, role, isFirebaseReady]);
 
-  // Listener for garage providers
   useEffect(() => {
     if (!user || !isFirebaseReady) return;
     const unsubscribeGarages = listenToGarages(setGarageProviders);
@@ -163,6 +166,11 @@ export default function GarageAdminPage() {
     let requestNeedsAssignment = false;
     const currentRequest = requests.find(req => req.id === requestId);
     if (!currentRequest) return;
+
+    if (currentRequest.cancellationRequested && currentRequest.status === 'Pending' && newStatus !== 'Cancelled'){
+        toast({ title: "Action Blocked", description: "Please respond to the user's cancellation request before changing status.", variant: "destructive"});
+        return;
+    }
 
     const updateData: Partial<Omit<ServiceRequest, 'id' | 'requestTime'>> = { status: newStatus };
     if (notes !== undefined) updateData.mechanicNotes = notes;
@@ -204,6 +212,20 @@ export default function GarageAdminPage() {
     }
   };
 
+  const handleRespondToCancellation = async (requestId: string, approved: boolean, responseNotes?: string) => {
+    try {
+        await respondToCancellationRequest(requestId, approved, responseNotes);
+        toast({
+            title: `Cancellation ${approved ? 'Approved' : 'Denied'}`,
+            description: `Response sent for request ${requests.find(r => r.id === requestId)?.requestId.slice(0,10)}...`,
+        });
+    } catch (error) {
+        console.error("Error responding to cancellation:", error);
+        toast({ title: "Response Failed", description: "Could not process cancellation response.", variant: "destructive" });
+    }
+  };
+
+
   const getVisibleRequests = () => {
     let filtered = requests;
     if (role === 'mechanic' && user && user.email) {
@@ -211,16 +233,12 @@ export default function GarageAdminPage() {
       if (mechanicStaffProfile) {
         filtered = filtered.filter(req => req.assignedStaffId === mechanicStaffProfile.id);
       } else {
-        // If mechanic profile not found (e.g., still loading staff or not a mechanic), show no requests for this mechanic
-        // This can happen briefly during initial load if staffMembers isn't populated yet.
-        // Or if the logged-in user is not actually in the staff list as a mechanic.
-        if (!isLoadingData && staffMembers.length > 0) { // Only set to empty if we've tried loading staff and it's not there
+        if (!isLoadingData && staffMembers.length > 0) { 
              console.warn(`Mechanic profile for ${user.email} not found in staff list. Showing no assigned requests.`);
         }
         filtered = []; 
       }
     }
-    // Apply general filters after role-specific filtering
     return filtered.filter(req => {
       const garageMatch = selectedGarage === 'all' || (req.selectedProvider && req.selectedProvider.id === selectedGarage);
       const statusMatch = selectedStatus === 'all' || req.status === selectedStatus;
@@ -308,13 +326,12 @@ export default function GarageAdminPage() {
     );
   }
 
-  const pendingRequestCount = requests.filter(req => req.status === 'Pending').length;
+  const pendingRequestCount = requests.filter(req => req.status === 'Pending' && !req.cancellationRequested).length;
+  const pendingCancellationsCount = requests.filter(req => req.cancellationRequested && req.status === 'Pending').length;
   
-  let currentRoleIcon = Users; // Default to Users (could be for customer_relations if admin is briefcase)
-  if (role === 'admin') currentRoleIcon = Briefcase; // Example: Admin gets Briefcase
+  let currentRoleIcon = Users; 
+  if (role === 'admin') currentRoleIcon = Briefcase; 
   if (role === 'mechanic') currentRoleIcon = WrenchIcon;
-  // If customer_relations needs a specific icon, it can be set here, e.g.
-  // if (role === 'customer_relations') currentRoleIcon = Headset; // Requires Headset icon from lucide
 
 
   return (
@@ -329,12 +346,12 @@ export default function GarageAdminPage() {
               </CardTitle>
               <CardDescription>View and manage service operations. Logged in as: <span className="font-semibold capitalize">{role.replace('_', ' ')}</span></CardDescription>
             </div>
-            {pendingRequestCount > 0 && (
+            {(pendingRequestCount > 0 || pendingCancellationsCount > 0) && (
                  <div className="relative">
-                    <Bell className="h-6 w-6 text-primary animate-pulse" />
+                    <Bell className={`h-6 w-6 ${pendingCancellationsCount > 0 ? 'text-orange-500' : 'text-primary'} animate-pulse`} />
                     <span className="absolute -top-1 -right-1 flex h-3 w-3">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-destructive opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-3 w-3 bg-red-600"></span>
+                        <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${pendingCancellationsCount > 0 ? 'bg-orange-500' : 'bg-destructive'} opacity-75`}></span>
+                        <span className={`relative inline-flex rounded-full h-3 w-3 ${pendingCancellationsCount > 0 ? 'bg-orange-600' : 'bg-red-600'}`}></span>
                     </span>
                  </div>
             )}
@@ -401,7 +418,7 @@ export default function GarageAdminPage() {
               </div>
               <p className="text-sm text-muted-foreground">
                 Displaying {visibleRequests.length} of {requests.length} total requests. 
-                ({pendingRequestCount} pending)
+                ({pendingRequestCount} pending, {pendingCancellationsCount} pending cancellation)
               </p>
                {isLoadingData && staffMembers.length === 0 && role === 'mechanic' ? ( 
                 <div className="flex items-center justify-center py-6">
@@ -419,11 +436,12 @@ export default function GarageAdminPage() {
                     requests={visibleRequests} 
                     onStatusChange={handleStatusChange} 
                     onAssignStaff={role === 'admin' ? handleAssignStaff : undefined}
-                    staffList={staffMembers} // Pass all staff for name lookups
-                    assignableStaffList={assignableMechanics} // Pass only assignable mechanics
+                    staffList={staffMembers} 
+                    assignableStaffList={assignableMechanics} 
                     currentUserRole={role || 'user'} 
                     currentUserId={user?.uid} 
                     currentUserEmail={user?.email || undefined}
+                    onRespondToCancellation={handleRespondToCancellation}
                   />
                 </div>
               )}
@@ -448,8 +466,8 @@ export default function GarageAdminPage() {
           onClose={() => setRequestToAssign(null)}
           requestId={requestToAssign.id}
           currentAssignedStaffId={requestToAssign.assignedStaffId}
-          allMechanics={allMechanics} // Full list of mechanics for display
-          availableMechanics={assignableMechanics} // Only available ones for selection
+          allMechanics={allMechanics} 
+          availableMechanics={assignableMechanics} 
           onAssignStaff={handleAssignStaff}
         />
       )}

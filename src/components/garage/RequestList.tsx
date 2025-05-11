@@ -18,6 +18,7 @@ interface RequestListProps {
   currentUserRole: UserRole;
   currentUserId?: string; 
   currentUserEmail?: string; 
+  onRespondToCancellation?: (requestId: string, approved: boolean, responseNotes?: string) => void;
 }
 
 const RequestList: FC<RequestListProps> = ({ 
@@ -28,7 +29,8 @@ const RequestList: FC<RequestListProps> = ({
     assignableStaffList, 
     currentUserRole, 
     currentUserId,
-    currentUserEmail
+    currentUserEmail,
+    onRespondToCancellation
 }) => {
   if (requests.length === 0) {
     return (
@@ -51,11 +53,12 @@ const RequestList: FC<RequestListProps> = ({
             request={request} 
             onStatusChange={onStatusChange} 
             onAssignStaff={onAssignStaff}
-            staffList={staffList} // Pass full list for display
-            assignableStaffList={assignableStaffList} // Pass available for assignment
+            staffList={staffList} 
+            assignableStaffList={assignableStaffList} 
             currentUserRole={currentUserRole}
             currentUserId={currentUserId}
             currentUserEmail={currentUserEmail}
+            onRespondToCancellation={onRespondToCancellation}
           />
         ))}
       </div>

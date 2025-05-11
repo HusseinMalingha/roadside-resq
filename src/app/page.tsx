@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
@@ -10,14 +11,15 @@ import VehicleInfoForm from '@/components/VehicleInfoForm';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { CheckCircle, MessageSquareHeart, Car, Clock, Loader2, ArrowLeft, Home, RefreshCw, LogIn, AlertCircle as AlertCircleIcon, Send, Settings, Navigation } from 'lucide-react';
+import { CheckCircle, MessageSquareHeart, Car, Clock, Loader2, ArrowLeft, Home, RefreshCw, LogIn, AlertCircle as AlertCircleIcon, Send, Settings, Navigation, XSquare } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { addServiceRequest, listenToRequestById } from '@/services/requestService'; 
+import { addServiceRequest, listenToRequestById, requestCancellation } from '@/services/requestService'; 
 import { getDraftRequest, saveDraftRequest, deleteDraftRequest } from '@/services/draftRequestService'; 
 import { getAllGarages } from '@/services/garageService'; 
+import CancelRequestDialog from '@/components/CancelRequestDialog'; // Import new dialog
 
 type AppStep = 'initial' | 'details' | 'providers' | 'tracking' | 'completed';
 
@@ -44,6 +46,7 @@ export default function RoadsideRescuePage() {
   const [isLoadingDraft, setIsLoadingDraft] = useState(true);
   const [availableProviders, setAvailableProviders] = useState<ServiceProvider[]>([]);
   const [isLoadingProviders, setIsLoadingProviders] = useState(false);
+  const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
 
 
   const { toast } = useToast();
@@ -268,6 +271,7 @@ export default function RoadsideRescuePage() {
     setIsIssueConfirmed(false);
     setIsVehicleInfoConfirmed(false);
     setHasProviderArrivedSimulation(false);
+    setIsCancelDialogOpen(false);
   };
   
   const handleInitialAction = () => {
@@ -342,7 +346,11 @@ export default function RoadsideRescuePage() {
           setCurrentStep('completed');
         }
       } else {
+        // Request might have been deleted or became inaccessible
         console.warn(`Request with ID ${serviceRequestId} not found or inaccessible.`);
+        // Potentially reset state if the active request disappears
+        // resetApp(); 
+        // setCurrentStep('initial'); // Or redirect, show error, etc.
       }
     });
 
@@ -392,9 +400,26 @@ export default function RoadsideRescuePage() {
     };
 }, [currentStep, selectedProvider, userLocation, providerETA, toast, serviceRequest, hasProviderArrivedSimulation]);
 
+  const handleRequestCancellation = async (reason: string) => {
+    if (!serviceRequestId) return;
+    try {
+      await requestCancellation(serviceRequestId, reason);
+      toast({ title: "Cancellation Requested", description: "Your request to cancel has been submitted." });
+      setIsCancelDialogOpen(false);
+      // The listener for request by ID should update the UI with the new status.
+    } catch (error) {
+      console.error("Error requesting cancellation:", error);
+      toast({ title: "Cancellation Failed", description: "Could not submit cancellation request.", variant: "destructive" });
+    }
+  };
+
 
   const allDetailsProvided = isLocationConfirmed && isIssueConfirmed && isVehicleInfoConfirmed;
   const isStaffUser = user && (role === 'admin' || role === 'mechanic' || role === 'customer_relations');
+
+  const canUserCancelRequest = serviceRequest && 
+                             (serviceRequest.status === 'Pending' || serviceRequest.status === 'Accepted' || serviceRequest.status === 'In Progress') &&
+                             !serviceRequest.cancellationRequested;
 
   const renderStepContent = () => {
     if ((authLoading || isLoadingProviders || (currentStep === 'initial' && isLoadingActiveRequest)) && currentStep === 'initial') {
@@ -465,13 +490,15 @@ export default function RoadsideRescuePage() {
         );
       case 'details':
         if (!user && isFirebaseReady && !authLoading) { 
-          router.push('/login?redirect=/');
+          // This client-side navigation should be wrapped in useEffect or a handler
+          // to avoid "Cannot update a component while rendering a different component" error.
+          // For now, a simple message or let AuthContext handle redirection.
           return <div className="flex-grow flex items-center justify-center"><Loader2 className="h-12 w-12 animate-spin text-primary" /><p className="ml-3">Redirecting to login...</p></div>;
         }
         if (isStaffUser) {
             toast({ title: "Staff Account", description: "Staff cannot make requests. Redirecting.", variant: "default"});
-            router.push('/garage-admin');
-            resetApp(); 
+            // router.push('/garage-admin'); // Causes "Cannot update component" error during render
+            useEffect(() => { router.push('/garage-admin'); resetApp(); }, [router]);
             return <div className="flex-grow flex items-center justify-center"><Loader2 className="h-12 w-12 animate-spin text-primary" /><p className="ml-3">Redirecting Staff...</p></div>;
         }
 
@@ -588,23 +615,43 @@ export default function RoadsideRescuePage() {
         return (
           <div className="w-full max-w-2xl space-y-6 animate-fadeIn">
             <div className="flex justify-between items-center">
-              <Button variant="outline" onClick={() => setCurrentStep('providers')} className="mb-2 self-start" disabled={serviceRequest.status === 'Completed' || serviceRequest.status === 'Cancelled' || serviceRequest.status === 'In Progress'}>
+              <Button 
+                variant="outline" 
+                onClick={() => setCurrentStep('providers')} 
+                className="mb-2 self-start" 
+                disabled={serviceRequest.status === 'Completed' || serviceRequest.status === 'Cancelled' || serviceRequest.status === 'In Progress' || serviceRequest.cancellationRequested}
+              >
                 <ArrowLeft className="mr-2 h-4 w-4" /> Change Provider
               </Button>
               <span className={`px-3 py-1 text-sm font-semibold rounded-full text-white ${
-                  serviceRequest.status === 'Pending' ? 'bg-yellow-500' :
-                  serviceRequest.status === 'Accepted' ? 'bg-blue-500' :
-                  serviceRequest.status === 'In Progress' ? 'bg-indigo-500' :
-                  serviceRequest.status === 'Completed' ? 'bg-green-500' :
-                  serviceRequest.status === 'Cancelled' ? 'bg-red-500' : 'bg-gray-500'
+                  serviceRequest.cancellationRequested && serviceRequest.status === 'Pending' ? 'bg-orange-500' : // Special color for pending cancellation
+                  statusColors[serviceRequest.status] || 'bg-gray-500'
               }`}>
-                Status: {serviceRequest.status}
+                Status: {serviceRequest.cancellationRequested && serviceRequest.status === 'Pending' ? 'Cancellation Pending' : serviceRequest.status}
               </span>
             </div>
             <Card className="shadow-xl">
               <CardHeader>
                 <CardTitle className="text-2xl">Tracking Your Assistance (ID: {serviceRequest.requestId})</CardTitle>
                 <CardDescription>{selectedProvider.name} is on the way!</CardDescription>
+                 {serviceRequest.cancellationRequested && serviceRequest.status === 'Pending' && (
+                    <Alert variant="default" className="bg-orange-100 border-orange-300 text-orange-700">
+                        <AlertCircleIcon className="h-4 w-4 text-orange-700" />
+                        <AlertTitle>Cancellation Requested</AlertTitle>
+                        <AlertDescription>
+                        Your request to cancel is pending review by the provider. Reason: {serviceRequest.cancellationReason || "Not specified"}.
+                        </AlertDescription>
+                    </Alert>
+                 )}
+                 {serviceRequest.status === 'Cancelled' && serviceRequest.cancellationResponse && (
+                     <Alert variant="destructive">
+                        <AlertCircleIcon className="h-4 w-4" />
+                        <AlertTitle>Cancellation Processed</AlertTitle>
+                        <AlertDescription>
+                        Provider Response: {serviceRequest.cancellationResponse}
+                        </AlertDescription>
+                    </Alert>
+                 )}
               </CardHeader>
               <CardContent className="space-y-4">
                 <MapDisplay userLocation={userLocation} providerLocation={providerCurrentLocation} title="Provider En Route" />
@@ -646,10 +693,17 @@ export default function RoadsideRescuePage() {
                   </div>
                 </div>
               </CardContent>
+              <CardFooter className="flex flex-col sm:flex-row gap-3">
+                {canUserCancelRequest && (
+                    <Button variant="destructive" onClick={() => setIsCancelDialogOpen(true)} className="w-full sm:w-auto">
+                        <XSquare className="mr-2 h-4 w-4" /> Request Cancellation
+                    </Button>
+                )}
+                <Button variant="outline" onClick={() => resetApp()} className="w-full sm:w-auto">
+                    <Home className="mr-2 h-4 w-4" /> Start New Request
+                </Button>
+              </CardFooter>
             </Card>
-             <Button variant="outline" onClick={() => resetApp()} className="w-full mt-4">
-                <Home className="mr-2 h-4 w-4" /> Start New Request
-            </Button>
           </div>
         );
       case 'completed':
@@ -679,6 +733,8 @@ export default function RoadsideRescuePage() {
                 <AlertTitle>{serviceRequest.status === 'Completed' ? "Confirmation" : "Notification"}</AlertTitle>
                 <AlertDescription>
                   {serviceRequest.status === 'Completed' ? `Your request has been marked as completed.` : `Your request has been marked as cancelled.`}
+                   {serviceRequest.status === 'Cancelled' && serviceRequest.cancellationReason && ` Reason: ${serviceRequest.cancellationReason}.`}
+                   {serviceRequest.status === 'Cancelled' && serviceRequest.cancellationResponse && ` Provider response: ${serviceRequest.cancellationResponse}.`}
                   {selectedProvider && ` If you have any questions, please contact ${selectedProvider.name} directly.`}
                 </AlertDescription>
               </Alert>
@@ -698,6 +754,13 @@ export default function RoadsideRescuePage() {
   return (
     <div className="flex flex-col items-center justify-center flex-grow w-full py-8 min-h-full">
       {renderStepContent()}
+       {serviceRequest && serviceRequestId && (
+          <CancelRequestDialog
+            isOpen={isCancelDialogOpen}
+            onClose={() => setIsCancelDialogOpen(false)}
+            onSubmit={handleRequestCancellation}
+          />
+        )}
     </div>
   );
 }

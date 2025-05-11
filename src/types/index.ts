@@ -51,6 +51,10 @@ export interface ServiceRequest {
   assignedStaffId?: string; 
   mechanicNotes?: string; 
   resourcesUsed?: string; 
+  cancellationRequested?: boolean;
+  cancellationReason?: string;
+  cancellationResponse?: string; // For admin/mechanic response to cancellation
+  statusBeforeCancellation?: ServiceRequest['status']; // To store status before user requests cancellation
 }
 
 export interface UserProfile {

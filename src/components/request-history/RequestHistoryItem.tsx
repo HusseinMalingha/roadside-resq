@@ -5,7 +5,7 @@ import type { FC } from 'react';
 import type { ServiceRequest } from '@/types';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'; // Keep Card for styling consistency if needed, or remove if AccordionItem is sufficient
 import { Badge } from '@/components/ui/badge';
-import { CalendarDays, CarIcon, Wrench, MapPin, AlertCircle, CheckCircle, Hourglass, Send, ShieldQuestion, ChevronDown } from 'lucide-react';
+import { CalendarDays, CarIcon, Wrench, MapPin, AlertCircle, CheckCircle, Hourglass, Send, ShieldQuestion, Info } from 'lucide-react';
 import {
   AccordionContent,
   AccordionItem,
@@ -71,6 +71,14 @@ const RequestHistoryItem: FC<RequestHistoryItemProps> = ({ request }) => {
                 <p className="text-xs italic text-muted-foreground pt-1">
                     Details: "{request.issueDescription}"
                 </p>
+            )}
+            {request.status === 'Cancelled' && request.cancellationReason && (
+              <div className="flex items-start text-muted-foreground pt-1">
+                <Info className="mr-2 h-4 w-4 text-destructive flex-shrink-0 mt-0.5" />
+                <span className="text-xs">Cancellation Reason: {request.cancellationReason}
+                  {request.cancellationResponse && <span className="block italic">Provider Response: {request.cancellationResponse}</span>}
+                </span>
+              </div>
             )}
           </div>
         </AccordionContent>
