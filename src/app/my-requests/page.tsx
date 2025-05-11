@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Loader2, ListChecks, Home, AlertCircle, Users, Info, RefreshCw } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import RequestHistoryItem from '@/components/request-history/RequestHistoryItem';
+import { Accordion } from '@/components/ui/accordion';
 
 export default function MyRequestsPage() {
   const { user, loading: authLoading, isFirebaseReady } = useAuth();
@@ -27,25 +28,13 @@ export default function MyRequestsPage() {
         setIsLoading(false);
       } else if (user && isFirebaseReady) { 
         setIsLoading(true); 
-        // Initial fetch for immediate display (optional, listener will update too)
-        // getUserRequests(user.uid) 
-        //   .then((requests) => {
-        //     setUserRequests(requests.map(r => ({...r, requestTime: new Date(r.requestTime as Date)})));
-        //   })
-        //   .catch(error => {
-        //     console.error("Failed to fetch user requests from Firestore:", error);
-        //   })
-        //   .finally(() => {
-        //     setIsLoading(false); 
-        //   });
         
-        // Set up listener for real-time updates
         unsubscribe = listenToRequestsForUser(user.uid, (requests) => {
             setUserRequests(requests.map(r => ({...r, requestTime: new Date(r.requestTime as Date)})));
             setIsLoading(false); 
         });
 
-      } else if (!isFirebaseReady) { // Auth/DB service not ready
+      } else if (!isFirebaseReady) { 
         setIsLoading(false);
       }
     }
@@ -134,11 +123,11 @@ export default function MyRequestsPage() {
             </div>
           ) : (
             <ScrollArea className="h-[calc(100vh-250px)] md:h-[calc(100vh-300px)]">
-              <div className="space-y-4 p-1">
+              <Accordion type="single" collapsible className="w-full space-y-4 p-1">
                 {userRequests.map((request) => (
                   <RequestHistoryItem key={request.id} request={request} />
                 ))}
-              </div>
+              </Accordion>
             </ScrollArea>
           )}
         </CardContent>
