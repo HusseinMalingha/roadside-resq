@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect } from 'react';
@@ -12,6 +13,7 @@ import EditVehicleInfoForm from '@/components/profile/EditVehicleInfoForm';
 import { Separator } from '@/components/ui/separator';
 import RequestHistoryItem from '@/components/request-history/RequestHistoryItem';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Accordion } from '@/components/ui/accordion'; // Import Accordion
 
 
 export default function ProfileClientPage() {
@@ -153,7 +155,9 @@ export default function ProfileClientPage() {
               </div>
             ) : activeRequest ? (
               <>
-                <RequestHistoryItem request={activeRequest} />
+                <Accordion type="single" collapsible className="w-full">
+                  <RequestHistoryItem request={activeRequest} />
+                </Accordion>
                 <Button asChild className="mt-4 w-full sm:w-auto">
                   <Link href="/">
                     <Navigation className="mr-2 h-4 w-4" /> Track Your Request
