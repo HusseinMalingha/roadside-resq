@@ -403,7 +403,7 @@ export default function GarageAdminPage() {
                  <RequestList 
                     requests={visibleRequests} 
                     onStatusChange={handleStatusChange} 
-                    onAssignStaff={(role === 'admin' && onAssignStaff) ? handleAssignStaff : undefined}
+                    onAssignStaff={role === 'admin' ? handleAssignStaff : undefined}
                     staffList={staffMembers} 
                     assignableStaffList={assignableMechanics} 
                     currentUserRole={role || 'user'} // default to user if role is null
@@ -441,3 +441,4 @@ export default function GarageAdminPage() {
     </div>
   );
 }
+
