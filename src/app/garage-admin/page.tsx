@@ -1,4 +1,3 @@
-
 // src/app/garage-admin/page.tsx
 "use client";
 
@@ -66,7 +65,9 @@ export default function GarageAdminPage() {
       const initialGaragesData = await getAllGarages();
       setGarageProviders(initialGaragesData);
 
-      if (role === 'admin' ) {
+      // Fetch staff members if user is admin OR any other authenticated staff role
+      // as mechanics need to find their profile in the staff list.
+      if (user && (role === 'admin' || role === 'mechanic' || role === 'customer_relations')) {
         const initialStaffData = await getAllStaffMembers(); 
         setStaffMembers(initialStaffData);
       }
@@ -91,7 +92,7 @@ export default function GarageAdminPage() {
     } finally {
       setIsLoadingData(false);
     }
-  }, [role, toast, isFirebaseReady]); 
+  }, [role, toast, isFirebaseReady, user]); 
 
  useEffect(() => {
     if (!authLoading) { 
@@ -143,7 +144,8 @@ export default function GarageAdminPage() {
 
   // Listener for staff members
   useEffect(() => {
-    if (!user || role !== 'admin' || !isFirebaseReady) return; 
+    // Allow admin and other staff roles (e.g., mechanic) to listen to staff updates.
+    if (!user || !isFirebaseReady || !['admin', 'mechanic', 'customer_relations'].includes(role || '')) return; 
     const unsubscribeStaff = listenToStaffMembers(setStaffMembers);
     return () => unsubscribeStaff();
   }, [user, role, isFirebaseReady]);
@@ -203,15 +205,21 @@ export default function GarageAdminPage() {
 
   const getVisibleRequests = () => {
     let filtered = requests;
-    if (role === 'mechanic' && user) {
-      const mechanicStaffProfile = staffMembers.find(staff => staff.email.toLowerCase() === user.email?.toLowerCase() && staff.role === 'mechanic');
+    if (role === 'mechanic' && user && user.email) {
+      const mechanicStaffProfile = staffMembers.find(staff => staff.email.toLowerCase() === user.email!.toLowerCase() && staff.role === 'mechanic');
       if (mechanicStaffProfile) {
         filtered = filtered.filter(req => req.assignedStaffId === mechanicStaffProfile.id);
       } else {
-        // If mechanic profile not found (e.g., still loading staff or not a mechanic), show no requests
+        // If mechanic profile not found (e.g., still loading staff or not a mechanic), show no requests for this mechanic
+        // This can happen briefly during initial load if staffMembers isn't populated yet.
+        // Or if the logged-in user is not actually in the staff list as a mechanic.
+        if (!isLoadingData && staffMembers.length > 0) { // Only set to empty if we've tried loading staff and it's not there
+             console.warn(`Mechanic profile for ${user.email} not found in staff list. Showing no assigned requests.`);
+        }
         filtered = []; 
       }
     }
+    // Apply general filters after role-specific filtering
     return filtered.filter(req => {
       const garageMatch = selectedGarage === 'all' || (req.selectedProvider && req.selectedProvider.id === selectedGarage);
       const statusMatch = selectedStatus === 'all' || req.status === selectedStatus;
@@ -301,9 +309,11 @@ export default function GarageAdminPage() {
 
   const pendingRequestCount = requests.filter(req => req.status === 'Pending').length;
   
-  let currentRoleIcon = Users;
+  let currentRoleIcon = Users; // Default to Users (could be for customer_relations if admin is briefcase)
+  if (role === 'admin') currentRoleIcon = Briefcase; // Example: Admin gets Briefcase
   if (role === 'mechanic') currentRoleIcon = WrenchIcon;
-  if (role === 'customer_relations') currentRoleIcon = Briefcase;
+  // If customer_relations needs a specific icon, it can be set here, e.g.
+  // if (role === 'customer_relations') currentRoleIcon = Headset; // Requires Headset icon from lucide
 
 
   return (
@@ -316,7 +326,7 @@ export default function GarageAdminPage() {
                  {React.createElement(currentRoleIcon, { className: "mr-3 h-7 w-7 text-primary"})}
                  Garage Management Portal
               </CardTitle>
-              <CardDescription>View and manage service operations. Logged in as: <span className="font-semibold capitalize">{role}</span></CardDescription>
+              <CardDescription>View and manage service operations. Logged in as: <span className="font-semibold capitalize">{role.replace('_', ' ')}</span></CardDescription>
             </div>
             {pendingRequestCount > 0 && (
                  <div className="relative">
@@ -392,7 +402,12 @@ export default function GarageAdminPage() {
                 Displaying {visibleRequests.length} of {requests.length} total requests. 
                 ({pendingRequestCount} pending)
               </p>
-               {isLoadingData ? ( 
+               {isLoadingData && staffMembers.length === 0 && role === 'mechanic' ? ( 
+                <div className="flex items-center justify-center py-6">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  <p className="ml-3">Loading your assigned requests...</p>
+                </div>
+              ) : isLoadingData && role !== 'mechanic' ? (
                 <div className="flex items-center justify-center py-6">
                   <Loader2 className="h-8 w-8 animate-spin text-primary" />
                   <p className="ml-3">Loading requests...</p>
@@ -403,11 +418,11 @@ export default function GarageAdminPage() {
                     requests={visibleRequests} 
                     onStatusChange={handleStatusChange} 
                     onAssignStaff={role === 'admin' ? handleAssignStaff : undefined}
-                    staffList={staffMembers} 
-                    assignableStaffList={assignableMechanics} 
+                    staffList={staffMembers} // Pass all staff for name lookups
+                    assignableStaffList={assignableMechanics} // Pass only assignable mechanics
                     currentUserRole={role || 'user'} 
                     currentUserId={user?.uid} 
-                    currentUserEmail={user?.email}
+                    currentUserEmail={user?.email || undefined}
                   />
                 </div>
               )}
@@ -432,11 +447,12 @@ export default function GarageAdminPage() {
           onClose={() => setRequestToAssign(null)}
           requestId={requestToAssign.id}
           currentAssignedStaffId={requestToAssign.assignedStaffId}
-          allMechanics={allMechanics} 
-          availableMechanics={assignableMechanics}
+          allMechanics={allMechanics} // Full list of mechanics for display
+          availableMechanics={assignableMechanics} // Only available ones for selection
           onAssignStaff={handleAssignStaff}
         />
       )}
     </div>
   );
 }
+
