@@ -12,7 +12,8 @@ import {
   type NextOrObserver, 
   type User, 
   type Auth as FirebaseAuthType,
-  type ConfirmationResult 
+  type ConfirmationResult,
+  getAdditionalUserInfo // This was imported but not re-exported
 } from 'firebase/auth';
 import {
   getFirestore,
@@ -113,6 +114,7 @@ export {
   Timestamp,
   writeBatch,
   limit,
+  getAdditionalUserInfo, // Added getAdditionalUserInfo here
   type NextOrObserver,
   type User,
   type FirebaseAuthType,
@@ -122,3 +124,4 @@ export {
   type QuerySnapshot,
   type DocumentSnapshot
 };
+

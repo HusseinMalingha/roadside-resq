@@ -5,6 +5,7 @@ import './globals.css';
 import Header from '@/components/Header';
 import { Toaster } from "@/components/ui/toaster";
 import { AuthProvider } from '@/contexts/AuthContext';
+import ConfirmContactPhoneModal from '@/components/auth/ConfirmContactPhoneModal'; // Import the new modal
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-sans' });
 
@@ -26,6 +27,7 @@ export default function RootLayout({
           <main className="flex-grow container mx-auto p-4 md:p-8 flex flex-col">
             {children}
           </main>
+          <ConfirmContactPhoneModal /> {/* Add modal here so it can be controlled by AuthContext */}
           <Toaster />
           <footer className="py-6 text-center text-sm text-muted-foreground border-t">
             © {new Date().getFullYear()} ResQ. All rights reserved.

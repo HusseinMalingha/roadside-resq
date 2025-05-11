@@ -60,6 +60,7 @@ export interface UserProfile {
   photoURL?: string | null;
   phoneNumber?: string | null; // From Firebase Auth (usually verified)
   contactPhoneNumber?: string | null; // User-provided, editable contact number
+  contactPhoneNumberConfirmed?: boolean; // True if user has confirmed/provided this number
   role: StaffRole; 
   vehicleInfo?: VehicleInfo | null; // User's default vehicle
   // lastLogin: Timestamp; // Example
@@ -73,4 +74,5 @@ export interface DraftServiceRequestData {
   vehicleInfo?: VehicleInfo | null;
   lastUpdated?: Date | Timestamp; // Date for app, Timestamp for Firestore
 }
+
 

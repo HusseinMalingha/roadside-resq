@@ -1,3 +1,4 @@
+
 "use client";
 
 import type { ReactNode, FC } from 'react';
@@ -13,9 +14,10 @@ import {
   type ConfirmationResult, 
   onAuthStateChanged,
   type FirebaseAuthType,
+  getAdditionalUserInfo, // Import this
 } from '@/lib/firebase'; 
 import { getStaffMemberByEmail } from '@/services/staffService';
-import { getUserProfile, updateUserProfile } from '@/services/userService'; // Import userService functions
+import { getUserProfile, updateUserProfile } from '@/services/userService'; 
 import { useRouter } from 'next/navigation';
 import { useToast } from "@/hooks/use-toast";
 import type { UserRole, UserProfile, ServiceRequest as ServiceRequestType } from '@/types'; 
@@ -25,9 +27,15 @@ import { listenToActiveUserRequest } from '@/services/requestService';
 const ADMIN_EMAIL = 'husseinmalingha@gmail.com';
 const ADMIN_PHONE_NUMBER = '+256759794023';
 
+interface PhoneModalInfo {
+  show: boolean;
+  initialPhoneNumber: string;
+  userId: string;
+}
+
 interface AuthContextType {
   user: User | null;
-  userProfile: UserProfile | null; // Store full user profile
+  userProfile: UserProfile | null; 
   role: UserRole | null; 
   loading: boolean;
   isFirebaseReady: boolean;
@@ -36,9 +44,11 @@ interface AuthContextType {
   signInWithPhoneNumberStep2: (confirmationResult: ConfirmationResult, verificationCode: string) => Promise<void>;
   signOut: () => Promise<void>;
   setupRecaptcha: (elementId: string) => RecaptchaVerifier | null;
-  refreshUserProfile: () => Promise<void>; // Function to manually refresh profile
+  refreshUserProfile: () => Promise<void>; 
   activeRequest: ServiceRequestType | null;
   isLoadingActiveRequest: boolean;
+  requiresPhoneModalInfo: PhoneModalInfo | null;
+  setRequiresPhoneModalInfo: React.Dispatch<React.SetStateAction<PhoneModalInfo | null>>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -51,6 +61,7 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
   const [isFirebaseReady, setIsFirebaseReady] = useState(false);
   const [activeRequest, setActiveRequest] = useState<ServiceRequestType | null>(null);
   const [isLoadingActiveRequest, setIsLoadingActiveRequest] = useState(true);
+  const [requiresPhoneModalInfo, setRequiresPhoneModalInfo] = useState<PhoneModalInfo | null>(null);
   const router = useRouter();
   const { toast } = useToast();
 
@@ -64,7 +75,7 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
       (currentUser.phoneNumber && currentUser.phoneNumber === ADMIN_PHONE_NUMBER)
     ) {
       determinedRole = 'admin';
-    } else if (userEmailLower && determinedRole === 'user') { // Only check staff if not already admin
+    } else if (userEmailLower && determinedRole === 'user') { 
       try {
         const staffProfile = await getStaffMemberByEmail(userEmailLower);
         if (staffProfile && (staffProfile.role === 'mechanic' || staffProfile.role === 'customer_relations')) {
@@ -75,22 +86,25 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
       }
     }
     
-    // Prepare profile data, ensuring new fields are included
     const profileDataToUpdate: Partial<UserProfile> = {
         uid: currentUser.uid,
         email: currentUser.email,
         displayName: currentUser.displayName,
         photoURL: currentUser.photoURL,
-        phoneNumber: currentUser.phoneNumber, // This is from Firebase Auth
+        phoneNumber: currentUser.phoneNumber, 
         role: determinedRole,
-        // Ensure vehicleInfo and contactPhoneNumber are preserved if they exist, or initialized
         vehicleInfo: fetchedProfile?.vehicleInfo || null,
         contactPhoneNumber: fetchedProfile?.contactPhoneNumber || currentUser.phoneNumber || null,
+        contactPhoneNumberConfirmed: fetchedProfile?.contactPhoneNumberConfirmed || false,
     };
-
-    await updateUserProfile(currentUser.uid, profileDataToUpdate);
-    const updatedProfile = await getUserProfile(currentUser.uid); // Re-fetch to get merged data
-    setUserProfile(updatedProfile);
+    
+    // If profile doesn't exist or critical fields are missing, ensure it's created/updated
+    if (!fetchedProfile || fetchedProfile.role !== determinedRole || fetchedProfile.contactPhoneNumberConfirmed === undefined) {
+        await updateUserProfile(currentUser.uid, profileDataToUpdate);
+        fetchedProfile = await getUserProfile(currentUser.uid); // Re-fetch
+    }
+    
+    setUserProfile(fetchedProfile);
     setRole(determinedRole);
 
   }, []);
@@ -119,12 +133,13 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
           setUserProfile(null);
           setRole(null);
           setActiveRequest(null);
+          setRequiresPhoneModalInfo(null); // Clear modal flag on sign out
           setIsLoadingActiveRequest(false);
           if (unsubscribeActiveRequestListener) {
             unsubscribeActiveRequestListener();
           }
         }
-        setLoading(false); // Overall auth loading
+        setLoading(false); 
       });
       return () => {
         unsubscribeAuth();
@@ -151,9 +166,8 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
 
   const refreshUserProfile = useCallback(async () => {
     if (user) {
-        setLoading(true); // Consider if this loading state should be separate or combined
+        setLoading(true); 
         await fetchAndSetUserProfile(user);
-        // Active request is handled by its own listener, no need to manually refresh here typically
         setLoading(false);
     }
   }, [user, fetchAndSetUserProfile]);
@@ -168,15 +182,50 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
     setLoading(true);
     try {
       const provider = new GoogleAuthProvider();
-      await signInWithPopup(firebaseAuthInstance, provider);
-      // Profile update handled by onAuthStateChanged
+      const result = await signInWithPopup(firebaseAuthInstance, provider);
+      
+      if (result.user) {
+        const additionalUserInfo = getAdditionalUserInfo(result);
+        const isNewUser = additionalUserInfo?.isNewUser;
+        
+        // Fetch/create profile to determine role *before* deciding to show modal
+        let profile = await getUserProfile(result.user.uid);
+        let currentRole = profile?.role;
+
+        if (!profile) {
+            const determinedRoleOnCreation = (result.user.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase() || result.user.phoneNumber === ADMIN_PHONE_NUMBER) ? 'admin' : 'user';
+            const minimalProfileData: Partial<UserProfile> = {
+                uid: result.user.uid,
+                email: result.user.email,
+                displayName: result.user.displayName,
+                photoURL: result.user.photoURL,
+                phoneNumber: result.user.phoneNumber, // Firebase Auth phone
+                role: determinedRoleOnCreation,
+                contactPhoneNumberConfirmed: false, // New users always need to confirm/provide
+            };
+            await updateUserProfile(result.user.uid, minimalProfileData);
+            profile = await getUserProfile(result.user.uid); // get the created profile
+            currentRole = profile?.role;
+        }
+
+        // Trigger phone confirmation modal for new, non-admin users
+        // Or existing users who haven't confirmed their contact phone
+        if (profile && currentRole === 'user' && !profile.contactPhoneNumberConfirmed) {
+            setRequiresPhoneModalInfo({
+                show: true,
+                initialPhoneNumber: result.user.phoneNumber || profile.contactPhoneNumber || '',
+                userId: result.user.uid,
+            });
+        }
+      }
+      // onAuthStateChanged will also run and call fetchAndSetUserProfile
       toast({ title: "Sign-In Successful", description: "Signed in with Google." });
     } catch (error: any) {
       console.error("Error signing in with Google:", error);
       toast({ title: "Google Sign-In Failed", description: error.message || "An unexpected error occurred.", variant: "destructive" });
-      throw error;
+      // throw error; // No need to throw if handled by toast
     } finally {
-      // setLoading(false); // onAuthStateChanged will set loading
+       // setLoading is managed by onAuthStateChanged
     }
   };
   
@@ -193,8 +242,10 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
             recaptchaContainer.removeChild(recaptchaContainer.firstChild);
         }
         try {
+          // Ensure auth instance is correctly typed for RecaptchaVerifier
+          const authForRecaptcha = firebaseAuthInstance as FirebaseAuthType;
           const verifier = new RecaptchaVerifier(
-            firebaseAuthInstance as FirebaseAuthType, 
+            authForRecaptcha, 
             recaptchaContainer, 
             {
               'size': 'invisible',
@@ -253,7 +304,7 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
       }
       return null; 
     } finally {
-      // setLoading(false); // onAuthStateChanged will set loading
+      // setLoading handled by onAuthStateChanged
     }
   };
 
@@ -265,8 +316,37 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
     }
     setLoading(true);
     try {
-      await confirmationResult.confirm(verificationCode);
-      // Profile update handled by onAuthStateChanged
+      const userCredential = await confirmationResult.confirm(verificationCode);
+      // After phone sign-in, check if it's a new user or if contact phone needs confirmation
+      if (userCredential.user) {
+        const isNewUser = getAdditionalUserInfo(userCredential)?.isNewUser;
+        let profile = await getUserProfile(userCredential.user.uid);
+        let currentRole = profile?.role;
+
+        if (!profile) {
+             const determinedRoleOnCreation = (userCredential.user.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase() || userCredential.user.phoneNumber === ADMIN_PHONE_NUMBER) ? 'admin' : 'user';
+             const minimalProfileData: Partial<UserProfile> = {
+                uid: userCredential.user.uid,
+                email: userCredential.user.email, // usually null for phone auth
+                displayName: userCredential.user.displayName, // usually null
+                photoURL: userCredential.user.photoURL, // usually null
+                phoneNumber: userCredential.user.phoneNumber,
+                role: determinedRoleOnCreation,
+                contactPhoneNumberConfirmed: false,
+            };
+            await updateUserProfile(userCredential.user.uid, minimalProfileData);
+            profile = await getUserProfile(userCredential.user.uid);
+            currentRole = profile?.role;
+        }
+
+        if (profile && currentRole === 'user' && !profile.contactPhoneNumberConfirmed) {
+             setRequiresPhoneModalInfo({
+                show: true,
+                initialPhoneNumber: userCredential.user.phoneNumber || profile.contactPhoneNumber || '',
+                userId: userCredential.user.uid,
+            });
+        }
+      }
       toast({ title: "Sign-In Successful", description: "Signed in with phone number." });
     } catch (error: any) {
       console.error("Error verifying OTP:", error);
@@ -279,7 +359,7 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
       toast({ title: "Error Verifying OTP", description: errorMessage, variant: "destructive" });
       throw error; 
     } finally {
-      // setLoading(false); // onAuthStateChanged will set loading
+      // setLoading handled by onAuthStateChanged
     }
   };
 
@@ -296,7 +376,8 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
       setUser(null); 
       setUserProfile(null);
       setRole(null);   
-      setActiveRequest(null); // Clear active request on sign out
+      setActiveRequest(null); 
+      setRequiresPhoneModalInfo(null); // Clear modal state on sign out
       setIsLoadingActiveRequest(false);
       router.push('/login'); 
     } catch (error: any) {
@@ -308,7 +389,23 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, userProfile, role, loading, isFirebaseReady, signInWithGoogle, signInWithPhoneNumberStep1, signInWithPhoneNumberStep2, signOut: signOutUser, setupRecaptcha, refreshUserProfile, activeRequest, isLoadingActiveRequest }}>
+    <AuthContext.Provider value={{ 
+        user, 
+        userProfile, 
+        role, 
+        loading, 
+        isFirebaseReady, 
+        signInWithGoogle, 
+        signInWithPhoneNumberStep1, 
+        signInWithPhoneNumberStep2, 
+        signOut: signOutUser, 
+        setupRecaptcha, 
+        refreshUserProfile, 
+        activeRequest, 
+        isLoadingActiveRequest,
+        requiresPhoneModalInfo,
+        setRequiresPhoneModalInfo 
+    }}>
       {children}
     </AuthContext.Provider>
   );

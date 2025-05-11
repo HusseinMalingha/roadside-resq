@@ -13,8 +13,9 @@ const userProfileFromDoc = (docSnap: DocumentSnapshot): UserProfile | null => {
     email: data.email || null,
     displayName: data.displayName || null,
     photoURL: data.photoURL || null,
-    phoneNumber: data.phoneNumber || null,
+    phoneNumber: data.phoneNumber || null, // From Firebase Auth
     contactPhoneNumber: data.contactPhoneNumber || null,
+    contactPhoneNumberConfirmed: data.contactPhoneNumberConfirmed || false, // Default to false if not set
     role: data.role || 'user',
     vehicleInfo: data.vehicleInfo || null,
     // lastLogin: data.lastLogin instanceof Timestamp ? data.lastLogin.toDate() : new Date(data.lastLogin), // Example
@@ -46,10 +47,22 @@ export const updateUserProfile = async (userId: string, data: Partial<UserProfil
   }
   try {
     const userProfileRef = doc(db, USERS_COLLECTION, userId);
-    // Ensure main identifiers like uid and role are part of the data if they are being set/updated.
-    // Firestore's setDoc with merge:true will create or update.
     const dataToSet = { ...data };
-    if (!dataToSet.uid) dataToSet.uid = userId; // Ensure UID is present
+    if (!dataToSet.uid) dataToSet.uid = userId; 
+
+    // If contactPhoneNumber is being set, and contactPhoneNumberConfirmed is not explicitly passed,
+    // and the new contactPhoneNumber is different from an existing one, confirmation might be needed.
+    // However, for simplicity, we'll assume `contactPhoneNumberConfirmed` is managed explicitly.
+    // If contactPhoneNumber is being set to a new value, contactPhoneNumberConfirmed should ideally be set to false
+    // unless it's part of the confirmation flow.
+
+    if (dataToSet.contactPhoneNumber !== undefined && dataToSet.contactPhoneNumberConfirmed === undefined) {
+        // If setting/changing contactPhoneNumber and not explicitly confirming, mark as unconfirmed
+        // unless it's being cleared to null.
+        // This logic is now primarily handled by the modal flow itself.
+        // dataToSet.contactPhoneNumberConfirmed = dataToSet.contactPhoneNumber ? false : dataToSet.contactPhoneNumberConfirmed;
+    }
+
 
     await setDoc(userProfileRef, dataToSet, { merge: true });
   } catch (error) {
@@ -73,14 +86,14 @@ export const updateUserVehicleInfo = async (userId: string, vehicleInfo: Vehicle
   }
 };
 
-export const updateUserContactPhoneNumber = async (userId: string, contactPhoneNumber: string | null): Promise<void> => {
+export const updateUserContactPhoneNumber = async (userId: string, contactPhoneNumber: string | null, confirmed: boolean): Promise<void> => {
    if (!db || !userId) {
     console.error("Update Contact Phone: Firestore not initialized or userId missing.");
     throw new Error("Firestore not initialized or userId missing.");
   }
   try {
     const userProfileRef = doc(db, USERS_COLLECTION, userId);
-    await setDoc(userProfileRef, { contactPhoneNumber }, { merge: true });
+    await setDoc(userProfileRef, { contactPhoneNumber, contactPhoneNumberConfirmed: confirmed }, { merge: true });
   } catch (error) {
     console.error("Error updating user contact phone number in Firestore:", error);
     throw error;
