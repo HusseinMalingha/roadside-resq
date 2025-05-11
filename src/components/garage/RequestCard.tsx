@@ -7,7 +7,7 @@ import React, { useState } from 'react';
 import type { ServiceRequest, StaffMember, UserRole } from '@/types';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { MapPin, User, Phone, Wrench, CheckCircle, Send, XCircle, Hourglass, CarIcon, UserCheck, UserPlus, Edit2, MessageCircleWarning, AlertTriangle } from 'lucide-react';
+import { MapPin, User, Phone, Wrench, CheckCircle, Send, XCircle, Hourglass, CarIcon, UserCheck, UserPlus, Edit2, MessageCircleWarning, AlertTriangle, Navigation } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -35,11 +35,11 @@ interface RequestCardProps {
 }
 
 const statusColors: Record<ServiceRequest['status'], string> = {
-  Pending: 'bg-yellow-500',
-  Accepted: 'bg-blue-500',
-  'In Progress': 'bg-indigo-500',
-  Completed: 'bg-green-500',
-  Cancelled: 'bg-red-500',
+  Pending: 'bg-yellow-500', // Updated to yellow-500 from globals.css for safety (ResQ branding)
+  Accepted: 'bg-blue-500',  // Updated to blue-500 from globals.css for trust (ResQ branding)
+  'In Progress': 'bg-indigo-500', // Kept as indigo, often associated with progress
+  Completed: 'bg-green-500', // Green for completion (ResQ branding)
+  Cancelled: 'bg-red-500', // Red for cancellation
 };
 
 const statusIcons: Record<ServiceRequest['status'], React.ElementType> = {
@@ -112,6 +112,16 @@ const RequestCard: FC<RequestCardProps> = ({
     setIsRespondCancelDialogOpen(false);
   }
 
+  const handleNavigateToUser = () => {
+    if (request.userLocation) {
+      const { lat, lng } = request.userLocation;
+      const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+      window.open(mapsUrl, '_blank');
+    } else {
+      alert("User location is not available for navigation.");
+    }
+  };
+
   const canAdminAssign = currentUserRole === 'admin' && onAssignStaff && request.status !== 'Completed' && request.status !== 'Cancelled' && !(request.cancellationRequested && request.status === 'Pending');
   const canRespondToCancellation = (currentUserRole === 'admin' || (currentUserRole === 'mechanic' && isCurrentUserAssignedMechanic)) && request.cancellationRequested && request.status === 'Pending' && onRespondToCancellation;
   
@@ -128,6 +138,7 @@ const RequestCard: FC<RequestCardProps> = ({
       ) as ServiceRequest['status'][]
     : [request.status];
 
+  const canMechanicNavigate = currentUserRole === 'mechanic' && isCurrentUserAssignedMechanic && (request.status === 'Accepted' || request.status === 'In Progress');
 
   return (
     <>
@@ -254,6 +265,11 @@ const RequestCard: FC<RequestCardProps> = ({
                 <UserPlus className="mr-1.5 h-3.5 w-3.5"/> {request.assignedStaffId ? 'Re-assign' : 'Assign'}
               </Button>
             )}
+             {canMechanicNavigate && (
+              <Button size="sm" variant="outline" onClick={handleNavigateToUser} className="text-xs flex-1 sm:flex-initial">
+                <Navigation className="mr-1.5 h-3.5 w-3.5" /> Navigate to User
+              </Button>
+            )}
             {currentUserRole === 'mechanic' && isCurrentUserAssignedMechanic && (request.status === 'Accepted' || request.status === 'In Progress') && !(request.cancellationRequested && request.status === 'Pending') && (
               <Button size="sm" variant="outline" onClick={handleOpenLogDetailsDialog} className="text-xs flex-1 sm:flex-initial">
                 <Edit2 className="mr-1.5 h-3.5 w-3.5"/> Log Details
@@ -299,3 +315,4 @@ const RequestCard: FC<RequestCardProps> = ({
 };
 
 export default RequestCard;
+
