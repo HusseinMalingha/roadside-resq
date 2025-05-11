@@ -1,3 +1,4 @@
+
 // src/app/garage-admin/page.tsx
 "use client";
 
@@ -342,22 +343,22 @@ export default function GarageAdminPage() {
       </Card>
 
       <Tabs defaultValue="requests" className="w-full">
-        <TabsList className="flex flex-col h-auto sm:flex-row sm:h-10 items-stretch justify-center sm:justify-start max-w-md mx-auto w-full sm:space-x-1">
-          <TabsTrigger value="requests" className="flex flex-1 items-center justify-center p-2 text-xs sm:text-sm sm:flex-none sm:w-auto sm:px-3 sm:py-1.5">
-            <ClipboardList className="h-4 w-4 sm:h-5 sm:w-5 sm:mr-2" />
-            <span className="sm:inline">Service Requests</span>
+        <TabsList className="flex flex-row items-center justify-center w-full max-w-lg mx-auto space-x-1">
+          <TabsTrigger value="requests" className="inline-flex items-center justify-center rounded-sm p-2 text-sm font-medium data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm">
+            <ClipboardList className="h-5 w-5" />
+            <span className="hidden sm:inline ml-2">Service Requests</span>
           </TabsTrigger>
           
           {role === 'admin' && (
-            <TabsTrigger value="staff" className="flex flex-1 items-center justify-center p-2 text-xs sm:text-sm sm:flex-none sm:w-auto sm:px-3 sm:py-1.5">
-              <Users className="h-4 w-4 sm:h-5 sm:w-5 sm:mr-2" />
-              <span className="sm:inline">Staff</span>
+            <TabsTrigger value="staff" className="inline-flex items-center justify-center rounded-sm p-2 text-sm font-medium data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm">
+              <Users className="h-5 w-5" />
+              <span className="hidden sm:inline ml-2">Staff</span>
             </TabsTrigger>
           )}
           {role === 'admin' && (
-            <TabsTrigger value="garages" className="flex flex-1 items-center justify-center p-2 text-xs sm:text-sm sm:flex-none sm:w-auto sm:px-3 sm:py-1.5">
-              <Building className="h-4 w-4 sm:h-5 sm:w-5 sm:mr-2" />
-              <span className="sm:inline">Garages</span>
+            <TabsTrigger value="garages" className="inline-flex items-center justify-center rounded-sm p-2 text-sm font-medium data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm">
+              <Building className="h-5 w-5" />
+              <span className="hidden sm:inline ml-2">Garages</span>
             </TabsTrigger>
           )}
         </TabsList>
