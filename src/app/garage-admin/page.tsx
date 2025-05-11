@@ -72,8 +72,8 @@ export default function GarageAdminPage() {
 
       if (initialLoadRef.current) {
         toast({
-          title: "Local Data Loaded",
-          description: "Successfully fetched initial records from local storage.",
+          title: "Data Loaded",
+          description: "Successfully fetched initial records.",
           variant: "default",
           duration: 4000,
         });
@@ -82,8 +82,8 @@ export default function GarageAdminPage() {
         initialLoadRef.current = false; 
       }
     } catch (error) {
-      console.error("Error loading initial local data:", error);
-      toast({ title: "Error Loading Local Data", description: "Could not fetch initial records from local storage.", variant: "destructive" });
+      console.error("Error loading initial data:", error);
+      toast({ title: "Error Loading Data", description: "Could not fetch initial records.", variant: "destructive" });
       if (initialLoadRef.current) {
         initialLoadRef.current = false; 
       }
@@ -97,7 +97,7 @@ export default function GarageAdminPage() {
       if (!user && isFirebaseReady) { // Firebase Auth ready and no user
         router.push('/login?redirect=/garage-admin');
       } else if (user && isFirebaseReady && initialLoadRef.current) { 
-        loadInitialData(); // Load local data
+        loadInitialData(); // Load data
       } else if (!isFirebaseReady && initialLoadRef.current) {
         setIsLoadingData(false);
         initialLoadRef.current = false;
@@ -106,10 +106,10 @@ export default function GarageAdminPage() {
   }, [authLoading, user, router, loadInitialData, isFirebaseReady]);
 
 
-  // Listener for service requests (now from local storage, simulated)
+  // Listener for service requests
   useEffect(() => {
     if (!user) return; // User check only
-    const unsubscribeRequests = listenToRequests((updatedRequests) => { // listenToRequests now uses localStorage
+    const unsubscribeRequests = listenToRequests((updatedRequests) => { 
       const processedRequests = updatedRequests.map(r => ({
         ...r,
         vehicleInfo: r.vehicleInfo || DEFAULT_VEHICLE_INFO,
@@ -117,18 +117,18 @@ export default function GarageAdminPage() {
       })).sort((a, b) => (new Date(b.requestTime)).getTime() - (new Date(a.requestTime)).getTime());
       
       const currentPendingCount = processedRequests.filter(req => req.status === 'Pending').length;
-      // Notification logic for local changes can be kept if desired
+      
       if (!initialLoadRef.current && currentPendingCount > prevPendingCountRef.current) {
          toast({
-            title: "🔔 New Pending Request (Local)!",
-            description: `A new service request has been logged locally. ${currentPendingCount} pending.`,
+            title: "🔔 New Pending Request!",
+            description: `A new service request has been logged. ${currentPendingCount} pending.`,
             variant: "default",
             duration: 7000,
           });
       } else if (!initialLoadRef.current && currentPendingCount < prevPendingCountRef.current && prevPendingCountRef.current > 0) {
          toast({
-            title: "ℹ️ Pending Requests Updated (Local)",
-            description: `Number of pending local requests changed from ${prevPendingCountRef.current} to ${currentPendingCount}.`,
+            title: "ℹ️ Pending Requests Updated",
+            description: `Number of pending requests changed from ${prevPendingCountRef.current} to ${currentPendingCount}.`,
             duration: 4000,
         });
       }
@@ -136,17 +136,17 @@ export default function GarageAdminPage() {
       setRequests(processedRequests);
       if (isLoadingData && !initialLoadRef.current) setIsLoadingData(false); 
     });
-    return () => unsubscribeRequests(); // This will clear storage event listener
+    return () => unsubscribeRequests(); 
   }, [user, toast, isLoadingData]); 
 
-  // Listener for staff members (local)
+  // Listener for staff members
   useEffect(() => {
-    if (!user || role !== 'admin') return; // Simplified role check
+    if (!user || role !== 'admin') return; 
     const unsubscribeStaff = listenToStaffMembers(setStaffMembers);
     return () => unsubscribeStaff();
   }, [user, role]);
 
-  // Listener for garage providers (local)
+  // Listener for garage providers
   useEffect(() => {
     if (!user) return;
     const unsubscribeGarages = listenToGarages(setGarageProviders);
@@ -164,48 +164,43 @@ export default function GarageAdminPage() {
     if (resources !== undefined) updateData.resourcesUsed = resources;
 
     try {
-      await updateServiceRequest(requestId, updateData); // Updates localStorage
+      await updateServiceRequest(requestId, updateData); 
 
-      // Simplified assignment logic for local context
       if (role === 'admin' && newStatus === 'Accepted' && !currentRequest.assignedStaffId) {
         requestNeedsAssignment = true;
-        // Simulate fetching updated request for assignment dialog
         const potentiallyUpdatedRequest = { ...currentRequest, ...updateData } as ServiceRequest;
         setRequestToAssign(potentiallyUpdatedRequest); 
       }
       
       if (!requestNeedsAssignment) {
         toast({
-          title: "Status Updated (Local)",
+          title: "Status Updated",
           description: `Request ${requestId.slice(0,10)}... status changed to ${newStatus}.`,
         });
       }
     } catch (error) {
-      console.error("Error updating local request status:", error);
-      toast({ title: "Update Failed (Local)", description: "Could not update local request status.", variant: "destructive" });
+      console.error("Error updating request status:", error);
+      toast({ title: "Update Failed", description: "Could not update request status.", variant: "destructive" });
     }
   };
   
   const handleAssignStaff = async (requestId: string, staffId: string | null) => {
     try {
-      await updateServiceRequest(requestId, { assignedStaffId: staffId || undefined }); // Updates localStorage
+      await updateServiceRequest(requestId, { assignedStaffId: staffId || undefined }); 
       const staffName = staffMembers.find(s => s.id === staffId)?.name || 'Unassigned';
       toast({
-        title: "Request Assignment Updated (Local)",
+        title: "Request Assignment Updated",
         description: `Request ${requestId.slice(0,10)}... assigned to ${staffName}.`,
       });
       setRequestToAssign(null); 
     } catch (error) {
-      console.error("Error assigning staff locally:", error);
-      toast({ title: "Assignment Failed (Local)", description: "Could not assign staff to the local request.", variant: "destructive" });
+      console.error("Error assigning staff:", error);
+      toast({ title: "Assignment Failed", description: "Could not assign staff to the request.", variant: "destructive" });
     }
   };
 
-  // This filtering logic for mechanics/roles becomes less meaningful for a global admin view with localStorage
-  // It will reflect the local state of staff.
   const getVisibleRequests = () => {
     let filtered = requests;
-    // Mechanic view logic becomes a local filter
     if (role === 'mechanic' && user) {
       const mechanicStaffProfile = staffMembers.find(staff => staff.email.toLowerCase() === user.email?.toLowerCase() && staff.role === 'mechanic');
       if (mechanicStaffProfile) {
@@ -234,13 +229,13 @@ export default function GarageAdminPage() {
     setSelectedGarage('all');
     setSelectedStatus('all');
     toast({
-      title: "Local Data Refresh Initiated",
-      description: "Attempting to reload all data from local storage.",
+      title: "Data Refresh Initiated",
+      description: "Attempting to reload all data.",
       duration: 3000
     });
   }
 
-  if (authLoading || (isLoadingData && initialLoadRef.current && isFirebaseReady)) { // isFirebaseReady for Auth
+  if (authLoading || (isLoadingData && initialLoadRef.current && isFirebaseReady)) { 
     return (
       <div className="flex-grow flex items-center justify-center">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -249,7 +244,7 @@ export default function GarageAdminPage() {
     );
   }
 
-  if (!user && !authLoading && isFirebaseReady) { // Auth ready, no user
+  if (!user && !authLoading && isFirebaseReady) { 
     return (
         <div className="flex-grow flex items-center justify-center">
              <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -258,7 +253,7 @@ export default function GarageAdminPage() {
     );
   }
   
-  if (!isFirebaseReady && !authLoading) { // Auth service itself is not ready
+  if (!isFirebaseReady && !authLoading) { 
      return (
         <div className="flex-grow flex items-center justify-center p-4">
             <Card className="w-full max-w-md text-center shadow-xl">
@@ -277,8 +272,7 @@ export default function GarageAdminPage() {
     );
   }
 
-  // Simplified role check as complex roles from DB are gone
-  if (role !== 'admin') { 
+  if (role !== 'admin' && role !== 'mechanic' && role !== 'customer_relations') { 
     return (
       <div className="flex-grow flex flex-col items-center justify-center text-center p-6">
         <Card className="w-full max-w-md shadow-xl">
@@ -288,7 +282,7 @@ export default function GarageAdminPage() {
             <CardDescription>You do not have permission to view this page.</CardDescription>
           </CardHeader>
           <CardContent>
-            <p>This area is restricted to authorized admin personnel.</p>
+            <p>This area is restricted to authorized personnel.</p>
           </CardContent>
           <CardFooter>
             <Button asChild className="w-full">
@@ -303,8 +297,10 @@ export default function GarageAdminPage() {
   }
 
   const pendingRequestCount = requests.filter(req => req.status === 'Pending').length;
-  // Simplified role icon
-  const currentRoleIcon = Users;
+  
+  let currentRoleIcon = Users;
+  if (role === 'mechanic') currentRoleIcon = WrenchIcon;
+  if (role === 'customer_relations') currentRoleIcon = Briefcase;
 
 
   return (
@@ -315,9 +311,9 @@ export default function GarageAdminPage() {
             <div>
               <CardTitle className="text-2xl md:text-3xl flex items-center">
                  {React.createElement(currentRoleIcon, { className: "mr-3 h-7 w-7 text-primary"})}
-                 Garage Management Portal (Local Data)
+                 Garage Management Portal
               </CardTitle>
-              <CardDescription>View and manage service operations (data stored locally in this browser). Logged in as: <span className="font-semibold capitalize">{role}</span></CardDescription>
+              <CardDescription>View and manage service operations. Logged in as: <span className="font-semibold capitalize">{role}</span></CardDescription>
             </div>
             {pendingRequestCount > 0 && (
                  <div className="relative">
@@ -336,19 +332,19 @@ export default function GarageAdminPage() {
         <TabsList className="flex flex-col h-auto sm:flex-row sm:h-10 items-stretch justify-center sm:justify-start max-w-md mx-auto w-full sm:space-x-1">
           <TabsTrigger value="requests" className="flex flex-1 items-center justify-center p-2 text-xs sm:text-sm sm:flex-none sm:w-auto sm:px-3 sm:py-1.5">
             <ClipboardList className="h-4 w-4 sm:h-5 sm:w-5 sm:mr-2" />
-            <span className="sm:inline">Service Requests (Local)</span>
+            <span className="sm:inline">Service Requests</span>
           </TabsTrigger>
-          {/* Staff and Garages Management still shown for admin, but manage local data */}
+          
           {role === 'admin' && (
             <TabsTrigger value="staff" className="flex flex-1 items-center justify-center p-2 text-xs sm:text-sm sm:flex-none sm:w-auto sm:px-3 sm:py-1.5">
               <Users className="h-4 w-4 sm:h-5 sm:w-5 sm:mr-2" />
-              <span className="sm:inline">Staff (Local)</span>
+              <span className="sm:inline">Staff</span>
             </TabsTrigger>
           )}
           {role === 'admin' && (
             <TabsTrigger value="garages" className="flex flex-1 items-center justify-center p-2 text-xs sm:text-sm sm:flex-none sm:w-auto sm:px-3 sm:py-1.5">
               <Building className="h-4 w-4 sm:h-5 sm:w-5 sm:mr-2" />
-              <span className="sm:inline">Garages (Local)</span>
+              <span className="sm:inline">Garages</span>
             </TabsTrigger>
           )}
         </TabsList>
@@ -356,8 +352,8 @@ export default function GarageAdminPage() {
         <TabsContent value="requests" className="mt-6">
           <Card>
             <CardHeader>
-              <CardTitle>Current Service Requests (Local View)</CardTitle>
-              <CardDescription>These are requests stored in your browser's local storage.</CardDescription>
+              <CardTitle>Current Service Requests</CardTitle>
+              <CardDescription>Manage service requests below.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex flex-col sm:flex-row gap-3 items-center border-b pb-4">
@@ -390,13 +386,13 @@ export default function GarageAdminPage() {
                 </Button>
               </div>
               <p className="text-sm text-muted-foreground">
-                Displaying {visibleRequests.length} of {requests.length} total local requests. 
+                Displaying {visibleRequests.length} of {requests.length} total requests. 
                 ({pendingRequestCount} pending)
               </p>
                {isLoadingData ? ( 
                 <div className="flex items-center justify-center py-6">
                   <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                  <p className="ml-3">Loading local requests...</p>
+                  <p className="ml-3">Loading requests...</p>
                 </div>
               ) : (
                 <div className="min-h-[300px]"> 
@@ -406,7 +402,7 @@ export default function GarageAdminPage() {
                     onAssignStaff={role === 'admin' ? handleAssignStaff : undefined}
                     staffList={staffMembers} 
                     assignableStaffList={assignableMechanics} 
-                    currentUserRole={role || 'user'} // default to user if role is null
+                    currentUserRole={role || 'user'} 
                     currentUserId={user?.uid} 
                     currentUserEmail={user?.email}
                   />
@@ -418,12 +414,12 @@ export default function GarageAdminPage() {
 
         {role === 'admin' && (
           <TabsContent value="staff" className="mt-6">
-            <StaffManagement /> {/* Manages local staff list */}
+            <StaffManagement /> 
           </TabsContent>
         )}
         {role === 'admin' && (
           <TabsContent value="garages" className="mt-6">
-            <GarageManagement /> {/* Manages local garage list */}
+            <GarageManagement /> 
           </TabsContent>
         )}
       </Tabs>

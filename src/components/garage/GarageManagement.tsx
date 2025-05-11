@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import type { ServiceProvider } from '@/types';
-import { addGarage, updateGarage, deleteGarage, listenToGarages } from '@/services/garageService'; // Uses localStorage
+import { addGarage, updateGarage, deleteGarage, listenToGarages } from '@/services/garageService'; 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -31,8 +31,6 @@ const GarageManagement = () => {
 
   useEffect(() => {
     setIsLoading(true);
-    // listenToGarages now uses localStorage and will call back with initial data
-    // and on 'storage' events if data changes in another tab (for the same browser).
     const unsubscribe = listenToGarages((garagesData) => {
       setGarages(garagesData);
       setIsLoading(false);
@@ -52,11 +50,11 @@ const GarageManagement = () => {
 
   const handleDeleteGarage = async (garageId: string) => {
     try {
-      await deleteGarage(garageId); // Deletes from localStorage
-      toast({ title: "Garage Deleted (Local)", description: "The garage provider has been removed from local storage." });
+      await deleteGarage(garageId); 
+      toast({ title: "Garage Deleted", description: "The garage provider has been removed." });
     } catch (error) {
-      console.error("Error deleting garage from localStorage:", error);
-      toast({ title: "Deletion Failed (Local)", description: "Could not delete garage provider from local storage.", variant: "destructive" });
+      console.error("Error deleting garage:", error);
+      toast({ title: "Deletion Failed", description: "Could not delete garage provider.", variant: "destructive" });
     }
   };
 
@@ -65,16 +63,16 @@ const GarageManagement = () => {
 
     try {
       if (editingGarage && id) { 
-        await updateGarage(id, dataToSave); // Updates localStorage
+        await updateGarage(id, dataToSave); 
       } else { 
-        await addGarage(dataToSave as Omit<ServiceProvider, 'id' | 'distanceKm'>); // Adds to localStorage
+        await addGarage(dataToSave as Omit<ServiceProvider, 'id' | 'distanceKm'>); 
       }
       setIsDialogOpen(false);
       setEditingGarage(null);
-      toast({ title: `Garage ${editingGarage ? 'Updated' : 'Added'} (Local)`, description: `${garageData.name} has been successfully ${editingGarage ? 'updated' : 'added'} to local storage.` });
+      toast({ title: `Garage ${editingGarage ? 'Updated' : 'Added'}`, description: `${garageData.name} has been successfully ${editingGarage ? 'updated' : 'added'}.` });
     } catch (error) {
-       console.error("Error saving garage to localStorage:", error);
-       toast({ title: "Save Failed (Local)", description: "Could not save garage details to local storage.", variant: "destructive" });
+       console.error("Error saving garage:", error);
+       toast({ title: "Save Failed", description: "Could not save garage details.", variant: "destructive" });
     }
   };
 
@@ -82,12 +80,12 @@ const GarageManagement = () => {
     return (
         <Card>
             <CardHeader>
-                <CardTitle className="text-xl flex items-center"><Globe className="mr-2 h-5 w-5 text-primary" /> Manage Garage Providers (Local)</CardTitle>
-                <CardDescription>Loading local garage data...</CardDescription>
+                <CardTitle className="text-xl flex items-center"><Globe className="mr-2 h-5 w-5 text-primary" /> Manage Garage Providers</CardTitle>
+                <CardDescription>Loading garage data...</CardDescription>
             </CardHeader>
             <CardContent className="text-center py-6">
                 <Loader2 className="mx-auto h-8 w-8 animate-spin text-muted-foreground" />
-                <p className="mt-2 text-muted-foreground">Fetching local garage list...</p>
+                <p className="mt-2 text-muted-foreground">Fetching garage list...</p>
             </CardContent>
         </Card>
     );
@@ -99,8 +97,8 @@ const GarageManagement = () => {
         <CardHeader>
           <div className="flex justify-between items-center">
             <div>
-              <CardTitle className="text-xl flex items-center"><Globe className="mr-2 h-5 w-5 text-primary" /> Manage Garage Providers (Local)</CardTitle>
-              <CardDescription>Add, edit, or remove service provider branches. Data is stored in this browser.</CardDescription>
+              <CardTitle className="text-xl flex items-center"><Globe className="mr-2 h-5 w-5 text-primary" /> Manage Garage Providers</CardTitle>
+              <CardDescription>Add, edit, or remove service provider branches.</CardDescription>
             </div>
             <Button onClick={handleAddGarage}>
               <PlusCircle className="mr-2 h-4 w-4" /> Add Garage
@@ -109,7 +107,7 @@ const GarageManagement = () => {
         </CardHeader>
         <CardContent>
           {garages.length === 0 ? (
-            <p className="text-muted-foreground text-center py-4">No garage providers added yet in local storage. Default mock list may be active.</p>
+            <p className="text-muted-foreground text-center py-4">No garage providers added yet. Default mock list may be active.</p>
           ) : (
             <div className="overflow-x-auto">
               <Table>
@@ -143,7 +141,7 @@ const GarageManagement = () => {
                             <AlertDialogHeader>
                               <AlertDialogTitle>Are you sure?</AlertDialogTitle>
                               <AlertDialogDescription>
-                                This action cannot be undone. This will permanently delete {garage.name} from the local provider list.
+                                This action cannot be undone. This will permanently delete {garage.name} from the provider list.
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
@@ -174,3 +172,4 @@ const GarageManagement = () => {
 };
 
 export default GarageManagement;
+

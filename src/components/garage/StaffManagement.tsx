@@ -4,7 +4,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import type { StaffMember, StaffRole } from '@/types';
-import { addStaffMember, updateStaffMember, deleteStaffMember, listenToStaffMembers } from '@/services/staffService'; // Uses localStorage
+import { addStaffMember, updateStaffMember, deleteStaffMember, listenToStaffMembers } from '@/services/staffService'; 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -32,8 +32,6 @@ const StaffManagement = () => {
 
   useEffect(() => {
     setIsLoading(true);
-    // listenToStaffMembers now uses localStorage and will call back with initial data
-    // and on 'storage' events if data changes in another tab (for the same browser).
     const unsubscribe = listenToStaffMembers((staff) => {
       setStaffMembers(staff);
       setIsLoading(false);
@@ -53,28 +51,28 @@ const StaffManagement = () => {
 
   const handleDeleteStaff = async (staffId: string) => {
     try {
-      await deleteStaffMember(staffId); // Deletes from localStorage
-      toast({ title: "Staff Member Deleted (Local)", description: "The staff member has been removed from local storage." });
+      await deleteStaffMember(staffId); 
+      toast({ title: "Staff Member Deleted", description: "The staff member has been removed." });
     } catch (error) {
-      console.error("Error deleting staff member from localStorage:", error);
-      toast({ title: "Deletion Failed (Local)", description: "Could not delete staff member from local storage.", variant: "destructive" });
+      console.error("Error deleting staff member:", error);
+      toast({ title: "Deletion Failed", description: "Could not delete staff member.", variant: "destructive" });
     }
   };
 
   const handleSaveStaff = async (staffData: StaffMember) => {
     try {
       if (editingStaff && editingStaff.id) {
-        await updateStaffMember(editingStaff.id, staffData); // Updates localStorage
+        await updateStaffMember(editingStaff.id, staffData); 
       } else {
         const { id, ...dataToSave } = staffData; 
-        await addStaffMember(dataToSave as Omit<StaffMember, 'id'>); // Adds to localStorage
+        await addStaffMember(dataToSave as Omit<StaffMember, 'id'>); 
       }
       setIsDialogOpen(false);
       setEditingStaff(null);
-      toast({ title: `Staff Member ${editingStaff ? 'Updated' : 'Added'} (Local)`, description: `${staffData.name} has been successfully ${editingStaff ? 'updated' : 'added'} to local storage.` });
+      toast({ title: `Staff Member ${editingStaff ? 'Updated' : 'Added'}`, description: `${staffData.name} has been successfully ${editingStaff ? 'updated' : 'added'}.` });
     } catch (error) {
-      console.error("Error saving staff member to localStorage:", error);
-      toast({ title: "Save Failed (Local)", description: "Could not save staff member details to local storage.", variant: "destructive" });
+      console.error("Error saving staff member:", error);
+      toast({ title: "Save Failed", description: "Could not save staff member details.", variant: "destructive" });
     }
   };
   
@@ -88,12 +86,12 @@ const StaffManagement = () => {
       return (
           <Card>
               <CardHeader>
-                <CardTitle className="text-xl flex items-center"><Users className="mr-2 h-5 w-5 text-primary" /> Manage Staff Members (Local)</CardTitle>
-                <CardDescription>Loading local staff data...</CardDescription>
+                <CardTitle className="text-xl flex items-center"><Users className="mr-2 h-5 w-5 text-primary" /> Manage Staff Members</CardTitle>
+                <CardDescription>Loading staff data...</CardDescription>
               </CardHeader>
               <CardContent className="text-center py-6">
                   <Loader2 className="mx-auto h-8 w-8 animate-spin text-muted-foreground" />
-                   <p className="mt-2 text-muted-foreground">Fetching local staff list...</p>
+                   <p className="mt-2 text-muted-foreground">Fetching staff list...</p>
               </CardContent>
           </Card>
       );
@@ -105,8 +103,8 @@ const StaffManagement = () => {
         <CardHeader>
           <div className="flex justify-between items-center">
             <div>
-              <CardTitle className="text-xl flex items-center"><Users className="mr-2 h-5 w-5 text-primary" /> Manage Staff Members (Local)</CardTitle>
-              <CardDescription>Add, edit, or remove staff. Data is stored in this browser.</CardDescription>
+              <CardTitle className="text-xl flex items-center"><Users className="mr-2 h-5 w-5 text-primary" /> Manage Staff Members</CardTitle>
+              <CardDescription>Add, edit, or remove staff.</CardDescription>
             </div>
             <Button onClick={handleAddStaff}>
               <PlusCircle className="mr-2 h-4 w-4" /> Add Staff
@@ -115,7 +113,7 @@ const StaffManagement = () => {
         </CardHeader>
         <CardContent>
           {staffMembers.length === 0 ? (
-            <p className="text-muted-foreground text-center py-4">No staff members added yet in local storage.</p>
+            <p className="text-muted-foreground text-center py-4">No staff members added yet.</p>
           ) : (
             <div className="overflow-x-auto">
               <Table>
@@ -150,7 +148,7 @@ const StaffManagement = () => {
                             <AlertDialogHeader>
                               <AlertDialogTitle>Are you sure?</AlertDialogTitle>
                               <AlertDialogDescription>
-                                This action cannot be undone. This will permanently delete {staff.name} from the local staff list.
+                                This action cannot be undone. This will permanently delete {staff.name} from the staff list.
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
@@ -181,3 +179,4 @@ const StaffManagement = () => {
 };
 
 export default StaffManagement;
+

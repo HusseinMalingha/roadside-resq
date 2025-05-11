@@ -16,8 +16,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { addServiceRequest, listenToRequestById } from '@/services/requestService'; // Uses localStorage based service now
-import { getDraftRequest, saveDraftRequest, deleteDraftRequest } from '@/services/draftRequestService'; // Uses localStorage
+import { addServiceRequest, listenToRequestById } from '@/services/requestService'; 
+import { getDraftRequest, saveDraftRequest, deleteDraftRequest } from '@/services/draftRequestService'; 
 
 type AppStep = 'initial' | 'details' | 'providers' | 'tracking' | 'completed';
 
@@ -79,7 +79,7 @@ export default function RoadsideRescuePage() {
   const { toast } = useToast();
 
   const persistDraft = useCallback(async () => {
-    if (user && currentStep === 'details') { // Removed isFirebaseReady check as it's not for db
+    if (user && currentStep === 'details') { 
       const draftData: Partial<Omit<DraftServiceRequestData, 'userId' | 'lastUpdated'>> = {
         userLocation: userLocation,
         issueDescription: issueDescription,
@@ -206,7 +206,7 @@ export default function RoadsideRescuePage() {
       };
       
       try {
-        const createdRequest = await addServiceRequest(newRequestData); // Uses localStorage
+        const createdRequest = await addServiceRequest(newRequestData); 
         setServiceRequest(createdRequest); 
         setServiceRequestId(createdRequest.id); 
         if (user) await deleteDraftRequest(user.uid); 
@@ -216,10 +216,10 @@ export default function RoadsideRescuePage() {
           description: `You've selected ${provider.name}. They are on their way. Request ID: ${createdRequest.requestId}`,
         });
       } catch (error) {
-        console.error("Error creating service request (localStorage):", error);
+        console.error("Error creating service request:", error);
         toast({
           title: "Request Failed",
-          description: "Could not submit your service request locally. Please try again.",
+          description: "Could not submit your service request. Please try again.",
           variant: "destructive",
         });
       }
@@ -253,7 +253,7 @@ export default function RoadsideRescuePage() {
   };
   
   const handleInitialAction = () => {
-    if (!isFirebaseReady) { // Check Firebase Auth readiness
+    if (!isFirebaseReady) { 
       toast({
         title: "Service Unavailable",
         description: "Authentication service is not ready. Please try again later.",
@@ -267,7 +267,7 @@ export default function RoadsideRescuePage() {
       if (role === 'admin' || role === 'mechanic' || role === 'customer_relations') {
         toast({
           title: "Staff Account",
-          description: "Staff members cannot make service requests. Redirecting to Garage Admin.",
+          description: "Staff members cannot make service requests. Redirecting to Garage Management.",
           variant: "default",
         });
         router.push('/garage-admin');
@@ -277,20 +277,17 @@ export default function RoadsideRescuePage() {
     }
   };
 
-  // This effect simulates tracking or updates from an admin.
-  // With localStorage, this would typically involve listening to 'storage' events
-  // or periodic checks if another part of the app (like a simplified admin view) updates it.
+
   useEffect(() => {
     if (!serviceRequestId || currentStep !== 'tracking') {
       return; 
     }
 
-    // listenToRequestById now comes from the localStorage-based service
     const unsubscribe = listenToRequestById(serviceRequestId, (updatedRequest) => {
       if (updatedRequest) {
         if (serviceRequest?.status !== updatedRequest.status) {
            toast({
-            title: "Request Status Updated (Local)",
+            title: "Request Status Updated",
             description: `Your request status is now: ${updatedRequest.status}`,
           });
         }
@@ -298,8 +295,6 @@ export default function RoadsideRescuePage() {
         
         if (updatedRequest.selectedProvider) {
             setSelectedProvider(updatedRequest.selectedProvider);
-            // ETA and provider location would likely be static from the selectedProvider
-            // unless a mock admin UI updates it in localStorage.
             setProviderETA(updatedRequest.selectedProvider.etaMinutes); 
             setProviderCurrentLocation(updatedRequest.selectedProvider.currentLocation); 
         }
@@ -308,15 +303,13 @@ export default function RoadsideRescuePage() {
           setCurrentStep('completed');
         }
       } else {
-        console.warn(`Request with ID ${serviceRequestId} not found in localStorage.`);
-        // Potentially reset if request disappears from local storage
+        console.warn(`Request with ID ${serviceRequestId} not found.`);
       }
     });
 
-    return () => unsubscribe(); // This will remove the 'storage' event listener
+    return () => unsubscribe(); 
   }, [serviceRequestId, toast, currentStep, serviceRequest?.status]);
 
-  // ETA simulation remains largely the same visually
   useEffect(() => {
     let trackingInterval: NodeJS.Timeout | null = null;
 
@@ -393,11 +386,11 @@ export default function RoadsideRescuePage() {
             <CardContent>
               <p className="mb-6">
                 {isStaffUser 
-                  ? "Manage service requests, staff, and garage branches from the admin panel (local data)." 
+                  ? "Manage service requests, staff, and garage branches from the admin panel." 
                   : "We'll quickly find nearby assistance for your issue."
                 }
               </p>
-               {!isFirebaseReady && !authLoading && ( // Still relevant for Auth service
+               {!isFirebaseReady && !authLoading && ( 
                 <Alert variant="destructive" className="mb-4">
                   <AlertCircleIcon className="h-4 w-4" />
                   <AlertTitle>Authentication Service Unavailable</AlertTitle>
@@ -419,7 +412,7 @@ export default function RoadsideRescuePage() {
                   size="lg" 
                   className="w-full text-lg py-7 bg-accent hover:bg-accent/90 text-accent-foreground" 
                   onClick={handleInitialAction}
-                  disabled={authLoading || !isFirebaseReady} // Auth readiness check
+                  disabled={authLoading || !isFirebaseReady} 
                 >
                   {authLoading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : 
                     !user ? <><LogIn className="mr-2 h-5 w-5" /> Login to Request</> : 
@@ -441,7 +434,7 @@ export default function RoadsideRescuePage() {
             resetApp(); 
             return <div className="flex-grow flex items-center justify-center"><Loader2 className="h-12 w-12 animate-spin text-primary" /><p className="ml-3">Redirecting Staff...</p></div>;
         }
-        if (!isFirebaseReady && !authLoading) { // Auth service check
+        if (!isFirebaseReady && !authLoading) { 
              return (
                 <Alert variant="destructive" className="w-full max-w-md">
                     <AlertCircleIcon className="h-4 w-4" />
@@ -520,7 +513,6 @@ export default function RoadsideRescuePage() {
               userLocation={userLocation}
               issueType={confirmedIssueSummary}
               onSelectProvider={handleSelectProvider}
-              // Pass the static list of providers here as Firestore is removed
               staticProviders={STATIC_PROVIDERS} 
             />
           </div>
