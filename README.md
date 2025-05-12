@@ -135,7 +135,7 @@ Follow these instructions to get a copy of the project up and running on your lo
 
 ## Admin Credentials
 
-The Garage Admin role is assigned if the logged-in user's email matches `husseinmalingha@gmail.com` or their phone number matches `+256759794023`. Other staff roles (Mechanic, Customer Relations) are managed via the `staffMembers` collection in Firestore and assigned by an Admin.
+The Garage Admin role is assigned if the logged-in user's email matches `husseinmalingha@gmail.com`. Other staff roles (Mechanic, Customer Relations) are managed via the `staffMembers` collection in Firestore and assigned by an Admin.
 
 ---
 
